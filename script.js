@@ -936,7 +936,7 @@ function renderProjectDetail(){
           <thead><tr>
             <th>Resource</th><th>Skill</th><th>Level</th><th>Country</th><th>Status</th>
             ${WEEKS.map(w=>`<th class="wk">W${w}</th>`).join('')}
-            ${ce?'<th></th>':''}
+            ${ce?'<th style="position:sticky;right:0;background:#f9fafb"></th>':''}
           </tr></thead>
           <tbody>
             ${visAssignments.map(a => {
@@ -964,7 +964,7 @@ function renderProjectDetail(){
                     ${ce?`<button class="btn danger sm" style="padding:2px 6px;font-size:10px" onclick="delPeriod(${realIdx},${pi})">🗑</button>`:''}
                   </td>
                   ${pWeeks}
-                  ${ce?'<td></td>':''}
+                  ${ce?'<td style="position:sticky;right:0;background:#fafafa"></td>':''}
                 </tr>`;
               }).join('');
               return `
@@ -975,8 +975,8 @@ function renderProjectDetail(){
                   <td style="padding:10px 12px;font-size:12px;color:#6b7280">${a.country}</td>
                   <td style="padding:10px 12px">${statusBadge}</td>
                   ${weekCells}
-                  ${ce?`<td style="padding:10px 8px;white-space:nowrap">
-                    <button class="btn danger sm" onclick="delAssignment(${realIdx})">🗑</button>
+                  ${ce?`<td style="padding:10px 8px;white-space:nowrap;position:sticky;right:0;background:#f0fdf8;box-shadow:-2px 0 4px rgba(0,0,0,0.06)">
+                    <button class="btn danger sm" onclick="delAssignment(${realIdx})">🗑 Remove</button>
                   </td>`:''}
                 </tr>
                 ${periodRows}
@@ -1591,6 +1591,20 @@ function updateSidebarForRole(){
   if(el) el.style.display = tm ? 'none' : '';
 }
 
+
+function toggleDark(){
+  const isDark = document.body.classList.toggle('dark');
+  localStorage.setItem('rp_dark', isDark ? '1' : '0');
+  document.getElementById('dark-btn').textContent = isDark ? '☀ Light' : '🌙 Dark';
+}
+
+// Apply saved dark mode preference on load
+(function(){
+  if(localStorage.getItem('rp_dark')==='1'){
+    document.body.classList.add('dark');
+  }
+})();
+
 function buildDatalist(){
   const people = getAllPeople();
   const opts = people.map(p => `<option value="${p.name}">${p.skillset} · ${p.team}</option>`).join('');
@@ -1623,6 +1637,8 @@ function flashMsg(text,ok){
 function render(){
   buildDatalist();
   updateSidebarForRole();
+  const darkBtn = document.getElementById('dark-btn');
+  if(darkBtn) darkBtn.textContent = document.body.classList.contains('dark') ? '☀ Light' : '🌙 Dark';
   document.getElementById('foot').textContent = `${state.assignments.length} assignment${state.assignments.length!==1?'s':''} · ${state.projects.length} project${state.projects.length!==1?'s':''}`;  saveData();
   const el = document.getElementById('content');
   const t = state.tab;

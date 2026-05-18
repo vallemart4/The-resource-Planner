@@ -164,7 +164,7 @@ function buildTeamAllocCard(teamMembers, allocWeeks, cw, state){
 
   const wHeaders = allocWeeks.map(w=>{
     const isNow = w===cw;
-    return '<th style="padding:8px 4px;text-align:center;min-width:58px;'+(isNow?'background:#f0fdf8;':'')+'">'+
+    return '<th style="padding:8px 4px;text-align:center;min-width:58px;'+(isNow?'background:var(--green-bg);':'')+'">'+
       '<div style="font-size:10px;font-weight:700;color:'+(isNow?'#0f6e56':'#9ca3af')+';font-family:DM Mono,monospace">W'+w+'</div>'+
       (isNow?'<div style="width:4px;height:4px;background:#1D9E75;border-radius:50%;margin:2px auto 0"></div>':'')+
     '</th>';
@@ -191,7 +191,7 @@ function buildTeamAllocCard(teamMembers, allocWeeks, cw, state){
         const barH = Math.min(Math.round((ta.avg/100)*52),52);
         const barColor = ta.avg>100?'#fca5a5':ta.avg>=80?'#6ee7b7':ta.avg>=50?'#fcd34d':ta.avg>0?'#93c5fd':'#e5e7eb';
         const textColor = ta.avg>100?'#b91c1c':ta.avg>=80?'#065f46':ta.avg>=50?'#92400e':ta.avg>0?'#1e40af':'#d1d5db';
-        return '<td style="padding:8px 4px;text-align:center;vertical-align:bottom;'+(isNow?'background:#f0fdf8;':'')+'border-bottom:1px solid #f3f4f6">'
+        return '<td style="padding:8px 4px;text-align:center;vertical-align:bottom;'+(isNow?'background:var(--green-bg);':'')+'border-bottom:1px solid #f3f4f6">'
           +'<div style="display:flex;flex-direction:column;align-items:center;gap:3px">'
           +(ta.over?'<div style="font-size:9px;color:#b91c1c;font-weight:700">+'+ta.over+'</div>':'<div style="font-size:9px;color:transparent">·</div>')
           +'<div style="font-size:12px;font-weight:700;color:'+textColor+';font-family:DM Mono,monospace;line-height:1">'+(ta.avg>0?ta.avg+'%':'–')+'</div>'
@@ -210,7 +210,7 @@ function buildTeamAllocCard(teamMembers, allocWeeks, cw, state){
     return '<tr style="border-bottom:'+(ti<2?'2px solid #e5e7eb':'1px solid #f3f4f6')+'">'
       +'<td style="padding:14px 24px;vertical-align:middle;min-width:220px">'
       +'<div style="display:flex;align-items:center;gap:12px">'
-      +'<div style="width:44px;height:44px;border-radius:12px;background:#f0fdf8;display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0">'+icon+'</div>'
+      +'<div style="width:44px;height:44px;border-radius:12px;background:var(--green-bg);display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0">'+icon+'</div>'
       +'<div style="flex:1;min-width:0">'
       +'<div style="font-size:14px;font-weight:700;color:#111827">'+team+'</div>'
       +'<div style="font-size:12px;color:#6b7280;margin-top:2px">'+memberCount+' member'+(memberCount!==1?'s':'')+'</div>'
@@ -968,14 +968,14 @@ function renderProjectDetail(){
                 </tr>`;
               }).join('');
               return `
-                <tr style="background:#f0fdf8;border-top:2px solid #e5e7eb">
+                <tr style="background:var(--green-bg);border-top:2px solid #e5e7eb">
                   <td style="padding:10px 12px;font-size:13px;font-weight:700;white-space:nowrap">${showName}</td>
                   <td style="padding:10px 12px;font-size:12px;color:#6b7280">${a.skillset}</td>
                   <td style="padding:10px 12px;font-size:12px;color:#6b7280">${a.level}</td>
                   <td style="padding:10px 12px;font-size:12px;color:#6b7280">${a.country}</td>
                   <td style="padding:10px 12px">${statusBadge}</td>
                   ${weekCells}
-                  ${ce?`<td style="padding:10px 8px;white-space:nowrap;position:sticky;right:0;background:#f0fdf8;box-shadow:-2px 0 4px rgba(0,0,0,0.06)">
+                  ${ce?`<td style="padding:10px 8px;white-space:nowrap;position:sticky;right:0;background:var(--green-bg);box-shadow:-2px 0 4px rgba(0,0,0,0.06)">
                     <button class="btn danger sm" onclick="delAssignment(${realIdx})">🗑 Remove</button>
                   </td>`:''}
                 </tr>
@@ -1153,7 +1153,7 @@ function renderInbox(){
               <div style="flex:1">
                 <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
                   <span style="font-size:13px;font-weight:700;color:#111827">${item.title}</span>
-                  <span style="background:${item.priority==='High'?'#fef2f2;color:#dc2626':item.priority==='Medium'?'#fffbeb;color:#b45309':'#f0fdf8;color:#0f6e56'};padding:1px 8px;border-radius:20px;font-size:10px;font-weight:700">${item.priority}</span>
+                  <span style="background:${item.priority==='High'?'#fef2f2;color:#dc2626':item.priority==='Medium'?'#fffbeb;color:#b45309':'var(--green-bg);color:#0f6e56'};padding:1px 8px;border-radius:20px;font-size:10px;font-weight:700">${item.priority}</span>
                 </div>
                 ${item.description?`<div style="font-size:12px;color:#6b7280;margin-bottom:6px">${item.description}</div>`:''}
                 <div style="font-size:11px;color:#9ca3af">Added by ${item.createdBy} · ${item.createdAt}</div>
@@ -1370,7 +1370,7 @@ function renderTeamDetail(){
       : `<span style="background:#f3f4f6;color:#6b7280;font-size:10px;font-weight:700;padding:1px 6px;border-radius:20px;margin-left:6px">Planning</span>`;
     const isEditing = ce && person.registered && state.editingMemberId === person.id;
     const editRow = isEditing ? `
-      <tr style="background:#f0fdf8"><td colspan="${6+52}" style="padding:0">
+      <tr style="background:var(--green-bg)"><td colspan="${6+52}" style="padding:0">
         <div class="edit-member-panel">
           <div style="font-size:11px;font-weight:700;color:#0f6e56;margin-bottom:12px;text-transform:uppercase;letter-spacing:.05em">✏ Editing: ${person.name}</div>
           <div class="fgrid">
@@ -1412,7 +1412,7 @@ function renderTeamDetail(){
         </div>
       </td></tr>` : '';
     return `
-      <tr style="background:#f0fdf8;border-top:2px solid #e5e7eb;${ce?'cursor:pointer':''}">
+      <tr style="background:var(--green-bg);border-top:2px solid #e5e7eb;${ce?'cursor:pointer':''}">
         <td style="padding:10px 12px;font-size:13px;font-weight:700;white-space:nowrap;${ce&&person.registered?'cursor:pointer;':''}" ${ce&&person.registered?`title="Click to edit" onclick="startEditMember(${person.id})"`:''}>
           ${person.name}${badge}
         </td>

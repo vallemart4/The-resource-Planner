@@ -1680,7 +1680,7 @@ function renderOverview(){
   const ce = canEdit();
 
   // Collect unique skills, levels, teams, assignments for filter dropdowns
-  const teams       = [...new Set(allPeople.map(p=>p.team))].sort();
+  const teams       = [...new Set(['Development','Platform','PMO',...allPeople.map(p=>p.team)].filter(Boolean))].sort();
   const skills      = [...new Set(allPeople.map(p=>p.skillset).filter(Boolean))].sort();
   const levels      = [...new Set(allPeople.map(p=>p.level).filter(Boolean))].sort();
   const assignments = [...new Set(state.assignments.map(a=>a.workName).filter(Boolean))].sort();

@@ -527,7 +527,7 @@ function renderProjectDetail(){
     </div>`:''}
     <div class="card">
       <div class="card-hdr"><span class="card-title">📅 Weekly allocation — all 52 weeks</span><span class="card-sub">Green row = person total · White rows = per-period breakdown</span></div>
-      ${visAssignments.length===0?`<div class="empty"><span class="empty-icon">👤</span>No resources assigned yet. Add one above!</div>`:`<div class="tbl-wrap"><table>
+      ${visAssignments.length===0?`<div class="empty"><span class="empty-icon">👤</span>No resources assigned yet. Add one above!</div>`:`<div class="tbl-wrap tbl-scroll-to-now"><table>
         <thead><tr>
           <th>Resource</th><th>Skill</th><th>Level</th><th>Country</th><th>Status</th>
           ${WEEKS.map(w=>wkHdr(w)).join('')}
@@ -758,7 +758,7 @@ function renderTeamDetail(){
     ${ce?`<div class="card" style="margin-bottom:16px"><div class="card-hdr"><span class="card-title">＋ Add team member</span></div><div class="card-body" style="display:flex;flex-direction:column;gap:14px"><div style="display:grid;grid-template-columns:1.5fr 1fr 1.5fr 1fr auto;gap:12px;align-items:flex-end"><div class="fg"><label class="lbl">Full name *</label><input class="inp" id="inp-tmName" list="people-list" placeholder="Type or pick a name…" autocomplete="off" oninput="onPersonInput(this.value,'tm')" /></div><div class="fg"><label class="lbl">Country</label><select class="sel" onchange="state.tmCountry=this.value"><option value="Sweden"${state.tmCountry==='Sweden'?' selected':''}>Sweden</option><option value="Poland"${state.tmCountry==='Poland'?' selected':''}>Poland</option></select></div><div class="fg"><label class="lbl">Skillset *</label><input class="inp" id="inp-tmSkill" placeholder="e.g. React, DevOps" oninput="state.tmSkill=this.value" onkeydown="if(event.key==='Enter')addTeamMember()" /></div><div class="fg"><label class="lbl">Level</label><select class="sel" onchange="state.tmLevel=this.value"><option${state.tmLevel==='Junior'?' selected':''}>Junior</option><option${state.tmLevel==='Mid'?' selected':''}>Mid</option><option${state.tmLevel==='Senior'?' selected':''}>Senior</option></select></div><button class="btn primary" onclick="addTeamMember()" style="white-space:nowrap">＋ Add member</button></div><div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;padding:12px;background:#f9fafb;border-radius:8px;border:1px solid #f3f4f6"><div class="fg"><label class="lbl">Teamlead override <span style="color:#9ca3af;font-weight:400">— blank = team default: <strong>${state.teamConfig[state.selectedTeam]?.teamlead||'none set'}</strong></span></label><input class="inp" id="inp-tmTl" list="people-list-optional" placeholder="Blank = inherit from team" autocomplete="off" oninput="state.tmTeamlead=this.value" /></div><div class="fg"><label class="lbl">Manager override <span style="color:#9ca3af;font-weight:400">— blank = team default: <strong>${state.teamConfig[state.selectedTeam]?.manager||'none set'}</strong></span></label><input class="inp" id="inp-tmMgr" list="people-list-optional" placeholder="Blank = inherit from team" autocomplete="off" oninput="state.tmManager=this.value" /></div></div></div></div>`:''}
     <div class="card">
       <div class="card-hdr"><span class="card-title">📅 Weekly allocation — all 52 weeks</span><span class="card-sub">Green row = person total · White rows = per-assignment breakdown</span></div>
-      ${people.length===0?`<div class="empty"><span class="empty-icon">👥</span>No team members in ${teamName} yet.</div>`:`<div class="tbl-wrap"><table><thead><tr><th>Name</th><th>Skill</th><th>Level</th><th>Country</th><th>Reporting</th><th>Assignments</th>${WEEKS.map(w=>wkHdr(w)).join('')}${ce?'<th></th>':''}</tr></thead><tbody>${memberRows}</tbody></table></div>`}
+      ${people.length===0?`<div class="empty"><span class="empty-icon">👥</span>No team members in ${teamName} yet.</div>`:`<div class="tbl-wrap tbl-scroll-to-now"><table><thead><tr><th>Name</th><th>Skill</th><th>Level</th><th>Country</th><th>Reporting</th><th>Assignments</th>${WEEKS.map(w=>wkHdr(w)).join('')}${ce?'<th></th>':''}</tr></thead><tbody>${memberRows}</tbody></table></div>`}
     </div>`;
 }
 
@@ -824,6 +824,21 @@ function setTab(t){
 
 function flashMsg(text,ok){ state.msg={text,ok}; render(); setTimeout(()=>{state.msg=null;render();},3000); }
 
+function scrollToCurrentWeek(){
+  // Find all scrollable table wrappers and scroll so current week is visible
+  requestAnimationFrame(()=>{
+    document.querySelectorAll('.tbl-scroll-to-now').forEach(wrap=>{
+      const hdr = wrap.querySelector('.wk-now-hdr');
+      if(!hdr) return;
+      // Scroll so the current week header is roughly 1/3 from the left
+      const wrapLeft = wrap.getBoundingClientRect().left;
+      const hdrLeft  = hdr.getBoundingClientRect().left;
+      const offset   = hdrLeft - wrapLeft - (wrap.clientWidth * 0.25);
+      wrap.scrollLeft = Math.max(0, wrap.scrollLeft + offset);
+    });
+  });
+}
+
 function render(){
   buildDatalist(); updateSidebarForRole();
   const darkBtn=document.getElementById('dark-btn');
@@ -843,13 +858,13 @@ function render(){
       tac.innerHTML=buildTeamAllocCard(tm,aw,cw2,state);
     }
   }
-  else if(t==='overview') el.innerHTML=renderOverview();
+  else if(t==='overview'){ el.innerHTML=renderOverview(); scrollToCurrentWeek(); }
   else if(t==='person-detail') el.innerHTML=renderPersonDetail();
   else if(t==='planning') el.innerHTML=renderPlanning();
   else if(t==='projects') el.innerHTML=renderProjects();
-  else if(t==='project-detail') el.innerHTML=renderProjectDetail();
+  else if(t==='project-detail'){ el.innerHTML=renderProjectDetail(); scrollToCurrentWeek(); }
   else if(t==='services') el.innerHTML=renderServices();
-  else if(t==='team-detail') el.innerHTML=renderTeamDetail();
+  else if(t==='team-detail'){ el.innerHTML=renderTeamDetail(); scrollToCurrentWeek(); }
   else if(t==='inbox') el.innerHTML=renderInbox();
   else if(t==='pipeline') el.innerHTML=renderPipeline();
   else if(t==='add'){ if(role()==='Project Manager') state.addType='Project'; el.innerHTML=renderAdd(); }
@@ -891,7 +906,7 @@ function renderOverview(){
   if(!people.length){
     rows=`<div class="empty"><span class="empty-icon">👥</span>${allPeople.length?'No results match your filters.':'No allocations yet. Go to Planning mode to get started.'}</div>`;
   } else {
-    rows=`<div class="tbl-wrap"><table><thead><tr><th>Person</th><th>Team</th><th>Country</th><th>Skill</th><th>Level</th><th>Status</th>${WEEKS.map(w=>wkHdr(w)).join('')}</tr></thead><tbody>${people.map(p=>{
+    rows=`<div class="tbl-wrap tbl-scroll-to-now"><table><thead><tr><th>Person</th><th>Team</th><th>Country</th><th>Skill</th><th>Level</th><th>Status</th>${WEEKS.map(w=>wkHdr(w)).join('')}</tr></thead><tbody>${people.map(p=>{
       const dn=(r==='Project Manager'&&visibleAssignments().some(a=>a.name===p.name&&!a.committed))?'— Planned resource —':p.name;
       const personA=visibleAssignments().filter(a=>a.name===p.name);
       const hasCom=personA.some(a=>a.committed), hasPlan=personA.some(a=>!a.committed);

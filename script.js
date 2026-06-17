@@ -98,7 +98,7 @@ let state = {
   aName:'', aTeam:'Development', aCountry:'Sweden', aSkill:'', aLevel:'Junior',
   aProjId:'', aService:'', aWork:'', aStart:1, aEnd:3, aPct:80,
   pName:'', pPm:'', pStart:'', pEnd:'', pDesc:'',
-  sName:'', sTeam:'Development',
+  sName:'', sTeam:'Development', sTargetPct:0,
   msg: null,
   selectedProject: null, selectedTeam: null,
   prName:'', prTeam:'Development', prCountry:'Sweden', prSkill:'', prLevel:'Junior', prStart:1, prEnd:4, prPct:80,
@@ -314,6 +314,47 @@ function renderDashboard(){
         return `<div class="dash-row" onclick="openProject(${p.id})"><div style="flex:1"><div style="font-weight:600">${p.name}</div><div style="font-size:11px;color:#9ca3af">${resources.length} resource${resources.length!==1?'s':''}</div></div><div style="text-align:right"><div style="font-size:12px;font-weight:700;color:${urgency}">${fmtDate(p.endDate)}</div><div style="font-size:10px;color:#9ca3af">${daysLeft} day${daysLeft!==1?'s':''} left</div></div></div>`;
       }).join('')}
     </div>`:''}
+
+    ${(()=>{
+      // Technical debt summary card — only show if any service has a target
+      const hasAnyTarget = state.baseServices.some(s=>s.targetPct>0);
+      if(!hasAnyTarget) return '';
+      const teamDebtRows = ['Development','Platform','PMO'].map(team=>{
+        const d = calcTeamDebt(team);
+        const icon = team==='Development'?'💻':team==='Platform'?'☁':'📊';
+        const svcsWithTarget = state.baseServices.filter(s=>s.team===team&&s.targetPct>0);
+        if(!svcsWithTarget.length) return '';
+        const color = d.debtPct===0?'#0f6e56':d.debtPct<200?'#b45309':'#b91c1c';
+        const bg    = d.debtPct===0?'#d1fae5':d.debtPct<200?'#fef3c7':'#fef2f2';
+        const maxDebt = svcsWithTarget.reduce((s,sv)=>s+sv.targetPct*(CURRENT_WEEK-1),0);
+        const barPct = maxDebt>0 ? Math.min(100, Math.round((d.debtPct/maxDebt)*100)) : 0;
+        return `<div class="dash-row" style="cursor:pointer" onclick="openTeam('${team}')">
+          <div style="display:flex;align-items:center;gap:10px;flex:1;min-width:0">
+            <span style="font-size:18px">${icon}</span>
+            <div style="flex:1;min-width:0">
+              <div style="font-weight:600;font-size:13px">${team}</div>
+              <div style="margin-top:4px;height:5px;background:#f3f4f6;border-radius:3px;overflow:hidden">
+                <div style="height:100%;width:${barPct}%;background:${color};border-radius:3px;transition:width .3s"></div>
+              </div>
+              <div style="font-size:10px;color:#9ca3af;margin-top:2px">${svcsWithTarget.length} service${svcsWithTarget.length!==1?'s':''} tracked</div>
+            </div>
+          </div>
+          <div style="text-align:right;flex-shrink:0;margin-left:16px">
+            <div style="font-size:20px;font-weight:700;color:${color};font-family:'DM Mono',monospace;line-height:1">${d.debtPct===0?'✓':d.debtPct+'%'}</div>
+            ${d.debtPct>0?`<div style="font-size:10px;color:#9ca3af;margin-top:2px">${d.debtWeeks}w fulltime</div>`:'<div style="font-size:10px;color:#0f6e56;margin-top:2px">on track</div>'}
+          </div>
+          <span style="font-size:12px;color:#9ca3af;margin-left:8px">→</span>
+        </div>`;
+      }).filter(Boolean).join('');
+      if(!teamDebtRows) return '';
+      return `<div class="card">
+        <div class="card-hdr">
+          <span class="card-title">🔧 Technical debt — Base Services</span>
+          <span class="card-sub">Accumulated W1–W${CURRENT_WEEK-1} · click team for details</span>
+        </div>
+        ${teamDebtRows}
+      </div>`;
+    })()}
   `;
 }
 
@@ -671,6 +712,49 @@ function renderTeamDetail(){
         <div><div class="org-label">Manager</div>${ce?`<div style="display:flex;align-items:center;gap:8px">${peopleSelectOptional('tc-mgr-'+teamName,state.teamConfig[teamName]?.manager||'','saveTeamConfig(\''+teamName+'\',\'manager\',this.value)','flex:1;max-width:220px')}${state.teamConfig[teamName]?.manager?`<span style="font-size:11px;color:#185fa5;font-weight:600">✓ ${state.teamConfig[teamName].manager}</span>`:'<span style="font-size:11px;color:#9ca3af">Not assigned</span>'}</div>`:`<div class="org-person">${state.teamConfig[teamName]?.manager||'<span style="color:#9ca3af;font-weight:400">Not assigned</span>'}</div>`}</div>
       </div>
     </div>
+
+    ${(()=>{
+      const svcs = state.baseServices.filter(s=>s.team===teamName&&s.targetPct>0);
+      if(!svcs.length) return '';
+      const teamDebt = calcTeamDebt(teamName);
+      return `<div class="card" style="margin-bottom:16px">
+        <div class="card-hdr">
+          <span class="card-title">🔧 Technical debt — Base Services</span>
+          <span class="card-sub">Accumulated W1–W${CURRENT_WEEK-1}</span>
+        </div>
+        ${svcs.map(s=>{
+          const debt=calcSvcDebt(s);
+          const currentAlloc=getSvcAlloc(s.name,CURRENT_WEEK);
+          const onTrack=currentAlloc>=s.targetPct;
+          const debtColor=debt.debtPct===0?'#0f6e56':debt.debtPct<s.targetPct*4?'#b45309':'#b91c1c';
+          const debtBg=debt.debtPct===0?'#d1fae5':debt.debtPct<s.targetPct*4?'#fef3c7':'#fef2f2';
+          const maxDebt=s.targetPct*(CURRENT_WEEK-1);
+          const barPct=maxDebt>0?Math.min(100,Math.round((debt.debtPct/maxDebt)*100)):0;
+          return `<div style="padding:12px 18px;border-bottom:1px solid #f3f4f6">
+            <div style="display:flex;align-items:center;gap:12px">
+              <div style="flex:1">
+                <div style="font-size:13px;font-weight:600;color:#111827">${s.name}</div>
+                <div style="font-size:11px;color:#6b7280;margin-top:2px">Target <strong>${s.targetPct}%</strong> · Now <strong style="color:${onTrack?'#0f6e56':'#b91c1c'}">${currentAlloc}%</strong> ${onTrack?'✓':('↓ '+(s.targetPct-currentAlloc)+'% below target')}</div>
+                <div style="margin-top:6px;height:5px;background:#f3f4f6;border-radius:3px;overflow:hidden;max-width:300px">
+                  <div style="height:100%;width:${barPct}%;background:${debtColor};border-radius:3px"></div>
+                </div>
+              </div>
+              <div style="text-align:right;flex-shrink:0">
+                <span style="background:${debtBg};color:${debtColor};padding:2px 10px;border-radius:20px;font-size:12px;font-weight:700">${debt.debtPct===0?'✓ No debt':debt.debtPct+'%'}</span>
+                ${debt.debtPct>0?`<div style="font-size:10px;color:#9ca3af;margin-top:4px">= ${debt.debtWeeks} weeks fulltime</div>`:''}
+              </div>
+            </div>
+          </div>`;
+        }).join('')}
+        <div style="padding:10px 18px;background:#f9fafb;border-top:1px solid #f3f4f6;display:flex;align-items:center;justify-content:space-between">
+          <span style="font-size:12px;color:#6b7280">${svcs.length} services tracked</span>
+          <div style="text-align:right">
+            <span style="font-size:13px;font-weight:700;color:${teamDebt.debtPct===0?'#0f6e56':teamDebt.debtPct<400?'#b45309':'#b91c1c'}">Total: ${teamDebt.debtPct===0?'✓ No debt':teamDebt.debtPct+'% · '+teamDebt.debtWeeks+'w'}</span>
+          </div>
+        </div>
+      </div>`;
+    })()}
+
     ${ce?`<div class="card" style="margin-bottom:16px"><div class="card-hdr"><span class="card-title">＋ Add team member</span></div><div class="card-body" style="display:flex;flex-direction:column;gap:14px"><div style="display:grid;grid-template-columns:1.5fr 1fr 1.5fr 1fr auto;gap:12px;align-items:flex-end"><div class="fg"><label class="lbl">Full name *</label><input class="inp" id="inp-tmName" list="people-list" placeholder="Type or pick a name…" autocomplete="off" oninput="onPersonInput(this.value,'tm')" /></div><div class="fg"><label class="lbl">Country</label><select class="sel" onchange="state.tmCountry=this.value"><option value="Sweden"${state.tmCountry==='Sweden'?' selected':''}>Sweden</option><option value="Poland"${state.tmCountry==='Poland'?' selected':''}>Poland</option></select></div><div class="fg"><label class="lbl">Skillset *</label><input class="inp" id="inp-tmSkill" placeholder="e.g. React, DevOps" oninput="state.tmSkill=this.value" onkeydown="if(event.key==='Enter')addTeamMember()" /></div><div class="fg"><label class="lbl">Level</label><select class="sel" onchange="state.tmLevel=this.value"><option${state.tmLevel==='Junior'?' selected':''}>Junior</option><option${state.tmLevel==='Mid'?' selected':''}>Mid</option><option${state.tmLevel==='Senior'?' selected':''}>Senior</option></select></div><button class="btn primary" onclick="addTeamMember()" style="white-space:nowrap">＋ Add member</button></div><div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;padding:12px;background:#f9fafb;border-radius:8px;border:1px solid #f3f4f6"><div class="fg"><label class="lbl">Teamlead override <span style="color:#9ca3af;font-weight:400">— blank = team default: <strong>${state.teamConfig[state.selectedTeam]?.teamlead||'none set'}</strong></span></label><input class="inp" id="inp-tmTl" list="people-list-optional" placeholder="Blank = inherit from team" autocomplete="off" oninput="state.tmTeamlead=this.value" /></div><div class="fg"><label class="lbl">Manager override <span style="color:#9ca3af;font-weight:400">— blank = team default: <strong>${state.teamConfig[state.selectedTeam]?.manager||'none set'}</strong></span></label><input class="inp" id="inp-tmMgr" list="people-list-optional" placeholder="Blank = inherit from team" autocomplete="off" oninput="state.tmManager=this.value" /></div></div></div></div>`:''}
     <div class="card">
       <div class="card-hdr"><span class="card-title">📅 Weekly allocation — all 52 weeks</span><span class="card-sub">Green row = person total · White rows = per-assignment breakdown</span></div>
@@ -848,12 +932,129 @@ function renderProjects(){
   return `<div class="card"><div class="card-hdr"><span class="card-title">💼 Projects</span></div><div class="card-body">${ce?`<div class="ibox"><div class="sec-title">Add project</div><div class="frow"><div class="fg"><label class="lbl">Project name</label><input class="inp" placeholder="e.g. Platform Renewal" value="${state.pName}" oninput="state.pName=this.value" onkeydown="if(event.key==='Enter')addProject()" /></div><div class="fg"><label class="lbl">Project manager</label>${peopleSelectOptional('add-pm',state.pPm,'state.pPm=this.value','')}</div><div class="fg"><label class="lbl">Start date</label><input class="inp" type="date" value="${state.pStart}" oninput="state.pStart=this.value" /></div><div class="fg"><label class="lbl">End date</label><input class="inp" type="date" value="${state.pEnd}" oninput="state.pEnd=this.value" /></div><div class="fg" style="grid-column:1/-1"><label class="lbl">Description <span style="color:#9ca3af;font-weight:400">(optional)</span></label><textarea class="inp" rows="2" style="resize:vertical" oninput="state.pDesc=this.value">${state.pDesc}</textarea></div><div style="padding-top:4px"><button class="btn primary" onclick="addProject()">＋ Add project</button></div></div></div>`:''}${list}</div></div>`;
 }
 
+// ── Technical debt helpers ────────────────────────────────────────────────
+function getSvcAlloc(svcName, w){
+  // Total allocation assigned to this base service in week w
+  return state.assignments
+    .filter(a => a.type==='Base Service' && a.workName===svcName)
+    .reduce((s,a) => s+getAlloc(a,w), 0);
+}
+
+function calcSvcDebt(svc){
+  // Debt is accumulated week by week from W1 up to (not including) current week
+  const target = svc.targetPct || 0;
+  if(!target) return {debtPct:0, debtWeeks:0, weeksChecked:0};
+  let debtPct = 0;
+  const weeksChecked = CURRENT_WEEK - 1; // weeks that have passed
+  for(let w=1; w<CURRENT_WEEK; w++){
+    const actual = getSvcAlloc(svc.name, w);
+    const shortfall = Math.max(0, target - actual);
+    debtPct += shortfall;
+  }
+  return {
+    debtPct: Math.round(debtPct),
+    debtWeeks: Math.round((debtPct/100)*10)/10, // e.g. 520% → 5.2 weeks
+    weeksChecked,
+  };
+}
+
+function calcTeamDebt(team){
+  const svcs = state.baseServices.filter(s => s.team===team && s.targetPct>0);
+  if(!svcs.length) return {debtPct:0, debtWeeks:0, svcs:[]};
+  let total = 0;
+  const details = svcs.map(s => { const d=calcSvcDebt(s); total+=d.debtPct; return {name:s.name, target:s.targetPct, ...d}; });
+  return {debtPct:Math.round(total), debtWeeks:Math.round((total/100)*10)/10, svcs:details};
+}
+
+function setSvcTarget(name, val){
+  state.baseServices = state.baseServices.map(s => s.name===name ? {...s, targetPct: Math.max(0,Math.min(200,+val||0))} : s);
+  saveData();
+  render();
+}
+
 function renderServices(){
   const ce=canEdit();
-  const groups=TEAMS.map(t=>{ const svcs=state.baseServices.filter(s=>s.team===t); return `<div class="svc-grp-lbl">${t}</div>${svcs.length?svcs.map(s=>`<div class="svc-row"><span>${s.name}</span>${ce?`<div style="display:flex;gap:6px"><button class="btn sm" onclick="editSvc('${s.name}')">✏ Edit</button><button class="btn danger sm" onclick="delSvc('${s.name}')">🗑</button></div>`:''}</div>`).join(''):`<div style="font-size:12px;color:#9ca3af;padding-bottom:6px">No services</div>`}`; }).join('');
-  return `<div class="card"><div class="card-hdr"><span class="card-title">🔧 Base Services</span></div><div class="card-body">${ce?`<div class="ibox"><div class="sec-title">Add base service</div><div class="frow"><div class="fg"><label class="lbl">Team</label><select class="sel" style="width:140px" onchange="state.sTeam=this.value">${TEAMS.map(t=>`<option${state.sTeam===t?' selected':''}>${t}</option>`).join('')}</select></div><div class="fg" style="flex:1"><label class="lbl">Service name</label><input class="inp" placeholder="e.g. API Support" value="${state.sName}" oninput="state.sName=this.value" onkeydown="if(event.key==='Enter')addSvc()" /></div><button class="btn primary" onclick="addSvc()">＋ Add</button></div></div>`:''}
-    <div style="max-height:400px;overflow-y:auto;border:1px solid #e5e7eb;border-radius:10px;padding:14px;background:#fafafa;">${groups}</div>
-  </div></div>`;
+
+  const allGroups = TEAMS.map(t=>{
+    const svcs = state.baseServices.filter(s=>s.team===t);
+    const teamDebt = calcTeamDebt(t);
+    const teamHasTargets = svcs.some(s=>s.targetPct>0);
+
+    const svcRows = svcs.length ? svcs.map(s=>{
+      const debt = calcSvcDebt(s);
+      const currentAlloc = getSvcAlloc(s.name, CURRENT_WEEK);
+      const target = s.targetPct || 0;
+      const onTrack = !target || currentAlloc >= target;
+      const debtColor = debt.debtPct===0 ? '#0f6e56' : debt.debtPct<target*4 ? '#b45309' : '#b91c1c';
+      const debtBg   = debt.debtPct===0 ? '#d1fae5' : debt.debtPct<target*4 ? '#fef3c7' : '#fef2f2';
+
+      return `<div style="background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:12px 14px;margin-bottom:8px">
+        <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+          <div style="flex:1;min-width:140px">
+            <div style="font-size:13px;font-weight:600;color:#111827">${s.name}</div>
+            ${target ? `<div style="font-size:11px;color:#6b7280;margin-top:2px">Target: <strong>${target}%</strong> · Now: <strong style="color:${onTrack?'#0f6e56':'#b91c1c'}">${currentAlloc}%</strong></div>` : `<div style="font-size:11px;color:#9ca3af;margin-top:2px">No target set</div>`}
+          </div>
+          ${target ? `<div style="text-align:right;flex-shrink:0">
+            <span style="background:${debtBg};color:${debtColor};padding:2px 10px;border-radius:20px;font-size:11px;font-weight:700">${debt.debtPct===0?'✓ No debt':'⚠ '+debt.debtPct+'% debt'}</span>
+            ${debt.debtPct>0 ? `<div style="font-size:10px;color:#9ca3af;margin-top:3px">= ${debt.debtWeeks} weeks fulltime</div>` : ''}
+          </div>` : ''}
+          ${ce ? `<div style="display:flex;align-items:center;gap:6px;flex-shrink:0">
+            <div style="display:flex;align-items:center;gap:4px">
+              <label style="font-size:10px;font-weight:700;color:#9ca3af;text-transform:uppercase;letter-spacing:.05em">Target %</label>
+              <input type="number" min="0" max="200" value="${target||''}" placeholder="0"
+                style="width:60px;padding:4px 6px;font-size:12px;border:1px solid #d1d5db;border-radius:6px;font-family:DM Mono,monospace;text-align:center"
+                oninput="setSvcTarget('${s.name.replace(/'/g,"\\'")}',this.value)" />
+            </div>
+            <button class="btn sm" onclick="editSvc('${s.name.replace(/'/g,"\\'")}')">✏</button>
+            <button class="btn danger sm" onclick="delSvc('${s.name.replace(/'/g,"\\'")}')">🗑</button>
+          </div>` : ''}
+        </div>
+        ${target && debt.debtPct>0 ? `
+        <div style="margin-top:10px">
+          <div style="display:flex;justify-content:space-between;font-size:10px;color:#9ca3af;margin-bottom:3px">
+            <span>Accumulated debt W1–W${CURRENT_WEEK-1}</span>
+            <span>${debt.debtPct}% of one FTE</span>
+          </div>
+          <div style="height:6px;background:#f3f4f6;border-radius:3px;overflow:hidden">
+            <div style="height:100%;width:${Math.min(100,Math.round((debt.debtPct/(target*CURRENT_WEEK))*100))}%;background:${debtColor};border-radius:3px;transition:width .3s"></div>
+          </div>
+        </div>` : ''}
+      </div>`;
+    }).join('') : `<div style="font-size:12px;color:#9ca3af;padding-bottom:6px">No services</div>`;
+
+    const teamDebtBadge = teamHasTargets
+      ? teamDebt.debtPct===0
+        ? `<span style="background:#d1fae5;color:#065f46;font-size:11px;font-weight:700;padding:1px 8px;border-radius:20px">✓ No debt</span>`
+        : `<span style="background:#fef3c7;color:#92400e;font-size:11px;font-weight:700;padding:1px 8px;border-radius:20px">⚠ ${teamDebt.debtPct}% · ${teamDebt.debtWeeks}w</span>`
+      : '';
+
+    return `<div style="margin-bottom:20px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+        <div class="svc-grp-lbl" style="margin:0">${t}</div>
+        ${teamDebtBadge}
+      </div>
+      ${svcRows}
+    </div>`;
+  }).join('');
+
+  return `<div class="card">
+    <div class="card-hdr">
+      <span class="card-title">🔧 Base Services</span>
+      <span class="card-sub">Set a target % to track technical debt accumulation</span>
+    </div>
+    <div class="card-body">
+      ${ce?`<div class="ibox">
+        <div class="sec-title">Add base service</div>
+        <div class="frow">
+          <div class="fg"><label class="lbl">Team</label><select class="sel" style="width:140px" onchange="state.sTeam=this.value">${TEAMS.map(t=>`<option${state.sTeam===t?' selected':''}>${t}</option>`).join('')}</select></div>
+          <div class="fg" style="flex:1"><label class="lbl">Service name</label><input class="inp" placeholder="e.g. API Support" value="${state.sName}" oninput="state.sName=this.value" onkeydown="if(event.key==='Enter')addSvc()" /></div>
+          <div class="fg"><label class="lbl">Target %</label><input class="inp" type="number" min="0" max="200" placeholder="e.g. 10" value="${state.sTargetPct||''}" style="width:80px" oninput="state.sTargetPct=+this.value" /></div>
+          <button class="btn primary" onclick="addSvc()">＋ Add</button>
+        </div>
+      </div>`:''}
+      <div>${allGroups}</div>
+    </div>
+  </div>`;
 }
 
 function buildPersonCalendar(name,selectedStart,selectedEnd){
@@ -896,7 +1097,7 @@ function renderAdd(){
 
 function deleteProject(id){ if(!confirm('Delete this project? Planning entries linked to it will not be deleted.')) return; state.projects=state.projects.filter(p=>p.id!==id); render(); }
 function addProject(){ if(!state.pName.trim()) return; state.projects.push({id:Date.now(),name:state.pName.trim(),projectManager:state.pPm.trim(),startDate:state.pStart,endDate:state.pEnd,description:state.pDesc.trim()}); state.pName=''; state.pPm=''; state.pStart=''; state.pEnd=''; state.pDesc=''; render(); }
-function addSvc(){ if(!state.sName.trim()) return; state.baseServices.push({name:state.sName.trim(),team:state.sTeam}); state.sName=''; render(); }
+function addSvc(){ if(!state.sName.trim()) return; state.baseServices.push({name:state.sName.trim(),team:state.sTeam,targetPct:state.sTargetPct||0}); state.sName=''; state.sTargetPct=0; render(); }
 function editSvc(name){ const n=prompt('New name:',name); if(!n?.trim()) return; state.baseServices=state.baseServices.map(s=>s.name===name?{...s,name:n.trim()}:s); render(); }
 function delSvc(name){ state.baseServices=state.baseServices.filter(s=>s.name!==name); render(); }
 

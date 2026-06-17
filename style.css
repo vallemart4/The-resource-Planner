@@ -67,7 +67,7 @@
   .role-pill select { background: none; border: none; font-size: 12px; font-weight: 600; color: var(--text2); cursor: pointer; outline: none; font-family: 'DM Sans', sans-serif; }
   .name-input { padding: 6px 10px; font-size: 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg3); width: 160px; font-family: 'DM Sans', sans-serif; outline: none; }
   .name-input:focus { border-color: var(--accent); background: var(--bg2); }
-  .content { flex: 1; overflow-y: auto; padding: 24px; display: flex; flex-direction: column; gap: 18px; background: var(--bg); }
+  .content { flex: 1; overflow-y: auto; overflow-x: hidden; padding: 24px; display: flex; flex-direction: column; gap: 18px; background: var(--bg); }
 
   /* ── Metrics ── */
   .metrics { display: grid; grid-template-columns: repeat(4,1fr); gap: 12px; }
@@ -78,14 +78,15 @@
   .metric-val.red { color: #b91c1c; }
 
   /* ── Cards ── */
-  .card { background: var(--bg2); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
-  .card-hdr { display: flex; align-items: center; justify-content: space-between; padding: 14px 18px; border-bottom: 1px solid var(--border); }
+  .card { background: var(--bg2); border: 1px solid var(--border); border-radius: 12px; overflow: visible; }
+  .card-hdr { display: flex; align-items: center; justify-content: space-between; padding: 14px 18px; border-bottom: 1px solid var(--border); border-radius: 12px 12px 0 0; overflow: hidden; }
   .card-title { font-size: 14px; font-weight: 700; display: flex; align-items: center; gap: 8px; }
   .card-sub { font-size: 11px; color: var(--text4); }
   .card-body { padding: 18px; }
 
   /* ── Tables ── */
   .tbl-wrap { overflow-x: auto; }
+  .tbl-scroll-to-now { overflow-x: auto; border-radius: 0 0 12px 12px; }
   table { width: 100%; border-collapse: collapse; font-size: 12px; }
   th { padding: 9px 12px; text-align: left; font-size: 10px; font-weight: 700; color: var(--text3); background: var(--bg3); border-bottom: 1px solid var(--border); white-space: nowrap; text-transform: uppercase; letter-spacing: 0.05em; font-family: 'DM Mono', monospace; }
   td { padding: 9px 12px; border-bottom: 1px solid var(--bg4); color: var(--text2); white-space: nowrap; vertical-align: middle; }
@@ -209,8 +210,7 @@
   ::-webkit-scrollbar { width: 5px; height: 5px; }
   ::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 3px; }
 
-  /* ── Sticky column shadow ── */
-  .tbl-scroll-to-now { overflow-x: auto; }
+  /* ── Sticky column shadow — right edge of last frozen column ── */
   .tbl-scroll-to-now th:nth-child(6),
   .tbl-scroll-to-now td:nth-child(6) {
     box-shadow: 4px 0 8px -2px rgba(0,0,0,0.10);

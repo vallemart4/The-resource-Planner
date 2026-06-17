@@ -527,11 +527,11 @@ function renderProjectDetail(){
     </div>`:''}
     <div class="card">
       <div class="card-hdr"><span class="card-title">📅 Weekly allocation — all 52 weeks</span><span class="card-sub">Green row = person total · White rows = per-period breakdown</span></div>
-      ${visAssignments.length===0?`<div class="empty"><span class="empty-icon">👤</span>No resources assigned yet. Add one above!</div>`:`<div class="tbl-wrap tbl-scroll-to-now"><table>
+      ${visAssignments.length===0?`<div class="empty"><span class="empty-icon">👤</span>No resources assigned yet. Add one above!</div>`:`<div class="tbl-wrap tbl-scroll-to-now"><table style="min-width:${STICKY_TOTAL+52*38}px">
         <thead><tr>
-          <th>Resource</th><th>Skill</th><th>Level</th><th>Country</th><th>Status</th>
+          ${stickyTh(0,'Resource')}${stickyTh(1,'Skill')}${stickyTh(2,'Level')}${stickyTh(3,'Country')}${stickyTh(4,'Status')}
           ${WEEKS.map(w=>wkHdr(w)).join('')}
-          ${ce?'<th style="position:sticky;right:0;background:#f9fafb"></th>':''}
+          ${ce?'<th style="position:sticky;right:0;z-index:3;background:#f9fafb"></th>':''}
         </tr></thead>
         <tbody>${visAssignments.map(a=>{
           const realIdx=state.assignments.indexOf(a);
@@ -540,10 +540,19 @@ function renderProjectDetail(){
           const statusBadge=a.committed?`<span class="badge b-committed" style="white-space:nowrap">✓ Committed</span><div style="font-size:10px;color:#9ca3af;margin-bottom:4px">${a.committedBy}</div>${ce?`<button class="btn danger sm" style="font-size:10px;padding:2px 6px" onclick="uncommitA(${realIdx})">↩ Uncommit</button>`:''}`:`<span class="badge b-plan">Planned</span>${ce?`<div style="margin-top:4px"><button class="btn primary sm" onclick="commitA(${realIdx})">🔒 Commit</button></div>`:''}`;
           const weekCells=WEEKS.map(w=>wkCell(w,getAlloc(a,w))).join('');
           const periodRows=a.periods.map((p,pi)=>{
-            const pWeeks=WEEKS.map(w=>{ const inRange=w>=p.startWeek&&w<=p.endWeek; return `<td class="wk${w===CURRENT_WEEK?' wk-now':''}" style="font-size:10px;${inRange?'background:rgba(29,158,117,0.08);color:#0f6e56':''}">${inRange?p.allocationPercent+'%':''}</td>`; }).join('');
-            return `<tr style="background:#fafafa"><td colspan="4" style="padding:4px 12px 4px 28px;font-size:11px;color:#6b7280">Period ${pi+1}: W${p.startWeek}–${p.endWeek} · ${p.allocationPercent}%</td><td style="padding:4px 12px">${ce?`<button class="btn danger sm" style="padding:2px 6px;font-size:10px" onclick="delPeriod(${realIdx},${pi})">🗑</button>`:''}</td>${pWeeks}${ce?'<td style="position:sticky;right:0;background:#fafafa"></td>':''}</tr>`;
+            const c0=STICKY_COLS[0], pWeeks=WEEKS.map(w=>{ const inRange=w>=p.startWeek&&w<=p.endWeek; return `<td class="wk${w===CURRENT_WEEK?' wk-now':''}" style="font-size:10px;${inRange?'background:rgba(29,158,117,0.08);color:#0f6e56':''}">${inRange?p.allocationPercent+'%':''}</td>`; }).join('');
+            return `<tr style="background:#fafafa"><td style="position:sticky;left:${c0.left}px;z-index:2;background:#fafafa;padding:4px 12px 4px 28px;font-size:11px;color:#6b7280;min-width:${c0.w}px" colspan="1">Period ${pi+1}: W${p.startWeek}–${p.endWeek} · ${p.allocationPercent}%</td><td colspan="3" style="padding:4px 12px"></td><td style="padding:4px 12px">${ce?`<button class="btn danger sm" style="padding:2px 6px;font-size:10px" onclick="delPeriod(${realIdx},${pi})">🗑</button>`:''}</td>${pWeeks}${ce?'<td style="position:sticky;right:0;background:#fafafa"></td>':''}</tr>`;
           }).join('');
-          return `<tr style="background:var(--green-bg);border-top:2px solid #e5e7eb"><td style="padding:10px 12px;font-size:13px;font-weight:700;white-space:nowrap">${showName}</td><td style="padding:10px 12px;font-size:12px;color:#6b7280">${a.skillset}</td><td style="padding:10px 12px;font-size:12px;color:#6b7280">${a.level}</td><td style="padding:10px 12px;font-size:12px;color:#6b7280">${a.country}</td><td style="padding:10px 12px">${statusBadge}</td>${weekCells}${ce?`<td style="padding:10px 8px;white-space:nowrap;position:sticky;right:0;background:var(--green-bg);box-shadow:-2px 0 4px rgba(0,0,0,0.06)"><button class="btn danger sm" onclick="delAssignment(${realIdx})">🗑 Remove</button></td>`:''}</tr>${periodRows}`;
+          const bg='var(--green-bg)';
+          return `<tr style="background:${bg};border-top:2px solid #e5e7eb">
+            ${stickyTdBg(0,`<span style="font-size:13px;font-weight:700">${showName}</span>`,bg,'padding:10px 12px')}
+            ${stickyTdBg(1,`<span style="font-size:12px;color:#6b7280">${a.skillset}</span>`,bg,'padding:10px 12px')}
+            ${stickyTdBg(2,`<span style="font-size:12px;color:#6b7280">${a.level}</span>`,bg,'padding:10px 12px')}
+            ${stickyTdBg(3,`<span style="font-size:12px;color:#6b7280">${a.country}</span>`,bg,'padding:10px 12px')}
+            ${stickyTdBg(4,statusBadge,bg,'padding:10px 12px')}
+            ${weekCells}
+            ${ce?`<td style="padding:10px 8px;white-space:nowrap;position:sticky;right:0;background:${bg};box-shadow:-2px 0 4px rgba(0,0,0,0.06)"><button class="btn danger sm" onclick="delAssignment(${realIdx})">🗑 Remove</button></td>`:''}
+          </tr>${periodRows}`;
         }).join('')}</tbody></table></div>`}
     </div>`;
 }
@@ -691,7 +700,12 @@ function renderTeamDetail(){
       const label=r==='Project Manager'&&!a.committed?'— Planned —':a.workName, idx=state.assignments.indexOf(a);
       const statusDot=a.committed?`<span style="background:#d1fae5;color:#065f46;padding:1px 7px;border-radius:20px;font-size:10px;font-weight:700;white-space:nowrap">✓ Committed</span>${ce?`<button class="btn danger sm" style="font-size:10px;padding:1px 6px;margin-left:4px" onclick="uncommitA(${idx})">↩</button>`:''}`:`<span style="background:#fef3c7;color:#92400e;padding:1px 7px;border-radius:20px;font-size:10px;font-weight:700;white-space:nowrap">⏳ Planned</span>${ce?`<button class="btn primary sm" style="font-size:10px;padding:1px 6px;margin-left:4px" onclick="commitA(${idx})">🔒 Commit</button>`:''}`;
       const weekCells=WEEKS.map(w=>{ const al=getAlloc(a,w); return `<td class="wk ${wCls(al)}${w===CURRENT_WEEK?' wk-now':''}" style="font-size:10px">${al>0?al+'%':''}</td>`; }).join('');
-      return `<tr style="background:#fafafa"><td style="padding:5px 12px 5px 28px;font-size:12px;color:#374151;white-space:nowrap">${label}</td><td style="padding:5px 12px;font-size:11px;color:#9ca3af">${a.type}</td><td colspan="2" style="padding:5px 12px;white-space:nowrap">${statusDot}</td><td style="padding:5px 12px"></td>${weekCells}${ce?`<td style="padding:5px 8px"></td>`:''}</tr>`;
+      return `<tr style="background:#fafafa">
+        ${(()=>{ const c=STICKY_COLS[0]; return `<td style="position:sticky;left:${c.left}px;z-index:2;background:#fafafa;min-width:${c.w}px;padding:5px 12px 5px 28px;font-size:12px;color:#374151;white-space:nowrap">${label}</td>`; })()}
+        ${(()=>{ const c=STICKY_COLS[1]; return `<td style="position:sticky;left:${c.left}px;z-index:2;background:#fafafa;min-width:${c.w}px;padding:5px 12px;font-size:11px;color:#9ca3af">${a.type}</td>`; })()}
+        <td colspan="2" style="padding:5px 12px;white-space:nowrap">${statusDot}</td>
+        <td style="padding:5px 12px"></td>
+        ${weekCells}${ce?`<td style="padding:5px 8px"></td>`:''}</tr>`;
     }).join('');
   }
   const memberRows=people.map(person=>{
@@ -700,7 +714,14 @@ function renderTeamDetail(){
     const badge=person.registered?`<span style="background:#e0f2fe;color:#075985;font-size:10px;font-weight:700;padding:1px 6px;border-radius:20px;margin-left:6px">Member</span>`:`<span style="background:#f3f4f6;color:#6b7280;font-size:10px;font-weight:700;padding:1px 6px;border-radius:20px;margin-left:6px">Planning</span>`;
     const isEditing=ce&&person.registered&&state.editingMemberId===person.id;
     const editRow=isEditing?`<tr style="background:var(--green-bg)"><td colspan="${6+52}" style="padding:0"><div class="edit-member-panel"><div style="font-size:11px;font-weight:700;color:#0f6e56;margin-bottom:12px;text-transform:uppercase;letter-spacing:.05em">✏ Editing: ${person.name}</div><div class="fgrid"><div class="fg"><label class="lbl">Full name</label><input class="inp" id="em-name-${person.id}" placeholder="${state.emName}" oninput="state.emName=this.value" /></div><div class="fg"><label class="lbl">Country</label><select class="sel" onchange="state.emCountry=this.value"><option value="Sweden"${state.emCountry==='Sweden'?' selected':''}>Sweden</option><option value="Poland"${state.emCountry==='Poland'?' selected':''}>Poland</option></select></div><div class="fg"><label class="lbl">Skillset</label><input class="inp" id="em-skill-${person.id}" placeholder="${state.emSkill}" oninput="state.emSkill=this.value" /></div><div class="fg"><label class="lbl">Level</label><select class="sel" onchange="state.emLevel=this.value"><option${state.emLevel==='Junior'?' selected':''}>Junior</option><option${state.emLevel==='Mid'?' selected':''}>Mid</option><option${state.emLevel==='Senior'?' selected':''}>Senior</option></select></div><div class="fg"><label class="lbl">Teamlead</label><input class="inp" id="em-tl-${person.id}" placeholder="${state.emTeamlead||'inherit from team'}" list="people-list-optional" autocomplete="off" oninput="state.emTeamlead=this.value" /></div><div class="fg"><label class="lbl">Manager</label><input class="inp" id="em-mgr-${person.id}" placeholder="${state.emManager||'inherit from team'}" list="people-list-optional" autocomplete="off" oninput="state.emManager=this.value" /></div><div style="display:flex;gap:8px;padding-top:4px;align-items:flex-end;grid-column:1/-1"><button class="btn primary sm" onclick="saveMemberEditFromInputs(${person.id})">✓ Save</button><button class="btn sm" onclick="state.editingMemberId=null;render()">✕ Cancel</button><button class="btn danger sm" onclick="removeTeamMember(${person.id})">🗑 Remove</button></div></div></div></td></tr>`:'';
-    return `<tr style="background:var(--green-bg);border-top:2px solid #e5e7eb;${ce?'cursor:pointer':''}"><td style="padding:10px 12px;font-size:13px;font-weight:700;white-space:nowrap;${ce&&person.registered?'cursor:pointer;':''}" ${ce&&person.registered?`title="Click to edit" onclick="startEditMember(${person.id})"`:''} >${person.name}${badge}</td><td style="padding:10px 12px;font-size:12px;color:#6b7280">${person.skillset}</td><td style="padding:10px 12px;font-size:12px;color:#6b7280">${person.level}</td><td style="padding:10px 12px;font-size:12px;color:#6b7280">${person.country}</td><td style="padding:10px 12px;font-size:12px;color:#6b7280">${getTeamlead(person.name)?`<div style="font-size:10px;color:#0f6e56;font-weight:700">TL: ${getTeamlead(person.name)}</div>`:''}${getManager(person.name)?`<div style="font-size:10px;color:#185fa5;font-weight:700">Mgr: ${getManager(person.name)}</div>`:''}${!getTeamlead(person.name)&&!getManager(person.name)?`<span style="color:#d1d5db;font-size:11px">–</span>`:''}</td><td style="padding:10px 12px;font-size:12px;color:#6b7280">${person.assignments.length} asgmt${person.assignments.length!==1?'s':''}</td>${weekCells}<td style="padding:10px 8px"></td></tr>${editRow}${assignmentRows(person)}`;
+    return `<tr style="background:var(--green-bg);border-top:2px solid #e5e7eb;${ce?'cursor:pointer':''}">
+        ${(()=>{ const c=STICKY_COLS[0]; return `<td style="position:sticky;left:${c.left}px;z-index:2;background:var(--green-bg);min-width:${c.w}px;width:${c.w}px;padding:10px 12px;font-size:13px;font-weight:700;white-space:nowrap;${ce&&person.registered?'cursor:pointer;':''}" ${ce&&person.registered?`title="Click to edit" onclick="startEditMember(${person.id})"`:''} >${person.name}${badge}</td>`; })()}
+        ${(()=>{ const c=STICKY_COLS[1]; return `<td style="position:sticky;left:${c.left}px;z-index:2;background:var(--green-bg);min-width:${c.w}px;width:${c.w}px;padding:10px 12px;font-size:12px;color:#6b7280">${person.skillset}</td>`; })()}
+        ${(()=>{ const c=STICKY_COLS[2]; return `<td style="position:sticky;left:${c.left}px;z-index:2;background:var(--green-bg);min-width:${c.w}px;width:${c.w}px;padding:10px 12px;font-size:12px;color:#6b7280">${person.level}</td>`; })()}
+        ${(()=>{ const c=STICKY_COLS[3]; return `<td style="position:sticky;left:${c.left}px;z-index:2;background:var(--green-bg);min-width:${c.w}px;width:${c.w}px;padding:10px 12px;font-size:12px;color:#6b7280">${person.country}</td>`; })()}
+        ${(()=>{ const c=STICKY_COLS[4]; return `<td style="position:sticky;left:${c.left}px;z-index:2;background:var(--green-bg);min-width:${c.w}px;width:${c.w}px;padding:10px 12px;font-size:12px;color:#6b7280">${getTeamlead(person.name)?`<div style="font-size:10px;color:#0f6e56;font-weight:700">TL: ${getTeamlead(person.name)}</div>`:''}${getManager(person.name)?`<div style="font-size:10px;color:#185fa5;font-weight:700">Mgr: ${getManager(person.name)}</div>`:''}${!getTeamlead(person.name)&&!getManager(person.name)?`<span style="color:#d1d5db;font-size:11px">–</span>`:''}</td>`; })()}
+        ${(()=>{ const c=STICKY_COLS[5]; return `<td style="position:sticky;left:${c.left}px;z-index:2;background:var(--green-bg);min-width:${c.w}px;width:${c.w}px;padding:10px 12px;font-size:12px;color:#6b7280">${person.assignments.length} asgmt${person.assignments.length!==1?'s':''}</td>`; })()}
+        ${weekCells}<td style="padding:10px 8px"></td></tr>${editRow}${assignmentRows(person)}`;
   }).join('');
 
   return `
@@ -758,7 +779,10 @@ function renderTeamDetail(){
     ${ce?`<div class="card" style="margin-bottom:16px"><div class="card-hdr"><span class="card-title">＋ Add team member</span></div><div class="card-body" style="display:flex;flex-direction:column;gap:14px"><div style="display:grid;grid-template-columns:1.5fr 1fr 1.5fr 1fr auto;gap:12px;align-items:flex-end"><div class="fg"><label class="lbl">Full name *</label><input class="inp" id="inp-tmName" list="people-list" placeholder="Type or pick a name…" autocomplete="off" oninput="onPersonInput(this.value,'tm')" /></div><div class="fg"><label class="lbl">Country</label><select class="sel" onchange="state.tmCountry=this.value"><option value="Sweden"${state.tmCountry==='Sweden'?' selected':''}>Sweden</option><option value="Poland"${state.tmCountry==='Poland'?' selected':''}>Poland</option></select></div><div class="fg"><label class="lbl">Skillset *</label><input class="inp" id="inp-tmSkill" placeholder="e.g. React, DevOps" oninput="state.tmSkill=this.value" onkeydown="if(event.key==='Enter')addTeamMember()" /></div><div class="fg"><label class="lbl">Level</label><select class="sel" onchange="state.tmLevel=this.value"><option${state.tmLevel==='Junior'?' selected':''}>Junior</option><option${state.tmLevel==='Mid'?' selected':''}>Mid</option><option${state.tmLevel==='Senior'?' selected':''}>Senior</option></select></div><button class="btn primary" onclick="addTeamMember()" style="white-space:nowrap">＋ Add member</button></div><div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;padding:12px;background:#f9fafb;border-radius:8px;border:1px solid #f3f4f6"><div class="fg"><label class="lbl">Teamlead override <span style="color:#9ca3af;font-weight:400">— blank = team default: <strong>${state.teamConfig[state.selectedTeam]?.teamlead||'none set'}</strong></span></label><input class="inp" id="inp-tmTl" list="people-list-optional" placeholder="Blank = inherit from team" autocomplete="off" oninput="state.tmTeamlead=this.value" /></div><div class="fg"><label class="lbl">Manager override <span style="color:#9ca3af;font-weight:400">— blank = team default: <strong>${state.teamConfig[state.selectedTeam]?.manager||'none set'}</strong></span></label><input class="inp" id="inp-tmMgr" list="people-list-optional" placeholder="Blank = inherit from team" autocomplete="off" oninput="state.tmManager=this.value" /></div></div></div></div>`:''}
     <div class="card">
       <div class="card-hdr"><span class="card-title">📅 Weekly allocation — all 52 weeks</span><span class="card-sub">Green row = person total · White rows = per-assignment breakdown</span></div>
-      ${people.length===0?`<div class="empty"><span class="empty-icon">👥</span>No team members in ${teamName} yet.</div>`:`<div class="tbl-wrap tbl-scroll-to-now"><table><thead><tr><th>Name</th><th>Skill</th><th>Level</th><th>Country</th><th>Reporting</th><th>Assignments</th>${WEEKS.map(w=>wkHdr(w)).join('')}${ce?'<th></th>':''}</tr></thead><tbody>${memberRows}</tbody></table></div>`}
+      ${people.length===0?`<div class="empty"><span class="empty-icon">👥</span>No team members in ${teamName} yet.</div>`:`<div class="tbl-wrap tbl-scroll-to-now"><table style="min-width:${STICKY_TOTAL+52*38}px"><thead><tr>
+              ${stickyTh(0,'Name')}${stickyTh(1,'Skill')}${stickyTh(2,'Level')}${stickyTh(3,'Country')}${stickyTh(4,'Reporting')}${stickyTh(5,'Assignments')}
+              ${WEEKS.map(w=>wkHdr(w)).join('')}${ce?'<th></th>':''}
+            </tr></thead><tbody>${memberRows}</tbody></table></div>`}
     </div>`;
 }
 
@@ -906,13 +930,25 @@ function renderOverview(){
   if(!people.length){
     rows=`<div class="empty"><span class="empty-icon">👥</span>${allPeople.length?'No results match your filters.':'No allocations yet. Go to Planning mode to get started.'}</div>`;
   } else {
-    rows=`<div class="tbl-wrap tbl-scroll-to-now"><table><thead><tr><th>Person</th><th>Team</th><th>Country</th><th>Skill</th><th>Level</th><th>Status</th>${WEEKS.map(w=>wkHdr(w)).join('')}</tr></thead><tbody>${people.map(p=>{
+    rows=`<div class="tbl-wrap tbl-scroll-to-now"><table style="min-width:${STICKY_TOTAL+52*38}px"><thead><tr>
+        ${stickyTh(0)}${stickyTh(1)}${stickyTh(2)}${stickyTh(3)}${stickyTh(4)}${stickyTh(5)}
+        ${WEEKS.map(w=>wkHdr(w)).join('')}
+      </tr></thead><tbody>${people.map(p=>{
       const dn=(r==='Project Manager'&&visibleAssignments().some(a=>a.name===p.name&&!a.committed))?'— Planned resource —':p.name;
       const personA=visibleAssignments().filter(a=>a.name===p.name);
       const hasCom=personA.some(a=>a.committed), hasPlan=personA.some(a=>!a.committed);
       const statusBadge=hasCom&&hasPlan?`<span class="status-mixed">Mixed</span>`:hasCom?`<span class="status-committed">✓ Committed</span>`:hasPlan?`<span class="status-planned">⏳ Planned</span>`:`<span style="font-size:10px;color:#d1d5db">–</span>`;
       const clickAttr=ce?`onclick="openPersonDetail('${p.name.replace(/'/g,"\\'")}')"`:'';
-      return `<tr class="${ce?'person-row-click':''}" ${clickAttr}><td style="background:${cBg(p.country)}"><strong>${dn}</strong>${ce?`<span style="font-size:10px;color:#9ca3af;margin-left:6px">→</span>`:''}</td><td><span style="cursor:pointer;color:#1D9E75;text-decoration:underline" onclick="event.stopPropagation();openTeam('${p.team}')">${p.team}</span></td><td>${p.country}</td><td>${p.skillset}</td><td>${p.level}</td><td>${statusBadge}</td>${WEEKS.map(w=>wkCell(w,getTotalAlloc(p.name,w))).join('')}</tr>`;
+      const nameBg = cBg(p.country);
+      return `<tr class="${ce?'person-row-click':''}" ${clickAttr}>
+        ${stickyTdBg(0,`<strong>${dn}</strong>${ce?`<span style="font-size:10px;color:#9ca3af;margin-left:6px">→</span>`:''}`,nameBg,'padding:9px 12px')}
+        ${stickyTd(1,`<span style="cursor:pointer;color:#1D9E75;text-decoration:underline" onclick="event.stopPropagation();openTeam('${p.team}')">${p.team}</span>`,'padding:9px 12px')}
+        ${stickyTd(2,p.country,'padding:9px 12px')}
+        ${stickyTd(3,p.skillset,'padding:9px 12px')}
+        ${stickyTd(4,p.level,'padding:9px 12px')}
+        ${stickyTd(5,statusBadge,'padding:9px 12px')}
+        ${WEEKS.map(w=>wkCell(w,getTotalAlloc(p.name,w))).join('')}
+      </tr>`;
     }).join('')}</tbody></table></div>`;
   }
   return `
@@ -947,7 +983,32 @@ function renderProjects(){
   return `<div class="card"><div class="card-hdr"><span class="card-title">💼 Projects</span></div><div class="card-body">${ce?`<div class="ibox"><div class="sec-title">Add project</div><div class="frow"><div class="fg"><label class="lbl">Project name</label><input class="inp" placeholder="e.g. Platform Renewal" value="${state.pName}" oninput="state.pName=this.value" onkeydown="if(event.key==='Enter')addProject()" /></div><div class="fg"><label class="lbl">Project manager</label>${peopleSelectOptional('add-pm',state.pPm,'state.pPm=this.value','')}</div><div class="fg"><label class="lbl">Start date</label><input class="inp" type="date" value="${state.pStart}" oninput="state.pStart=this.value" /></div><div class="fg"><label class="lbl">End date</label><input class="inp" type="date" value="${state.pEnd}" oninput="state.pEnd=this.value" /></div><div class="fg" style="grid-column:1/-1"><label class="lbl">Description <span style="color:#9ca3af;font-weight:400">(optional)</span></label><textarea class="inp" rows="2" style="resize:vertical" oninput="state.pDesc=this.value">${state.pDesc}</textarea></div><div style="padding-top:4px"><button class="btn primary" onclick="addProject()">＋ Add project</button></div></div></div>`:''}${list}</div></div>`;
 }
 
-// ── Technical debt helpers ────────────────────────────────────────────────
+// ── Sticky column helpers ─────────────────────────────────────────────────
+// left offsets for the 6 fixed columns: Person, Team, Country, Skill, Level, Status
+const STICKY_COLS = [
+  { w: 150, label: 'Person'  },
+  { w:  90, label: 'Team'    },
+  { w:  80, label: 'Country' },
+  { w: 110, label: 'Skill'   },
+  { w:  70, label: 'Level'   },
+  { w: 110, label: 'Status'  },
+];
+// Pre-compute left offsets
+STICKY_COLS.forEach((c,i)=>{ c.left = STICKY_COLS.slice(0,i).reduce((s,x)=>s+x.w,0); });
+const STICKY_TOTAL = STICKY_COLS.reduce((s,c)=>s+c.w,0);
+
+function stickyTh(i, content='', extraStyle=''){
+  const c = STICKY_COLS[i];
+  return `<th style="position:sticky;left:${c.left}px;z-index:3;background:var(--bg3);min-width:${c.w}px;width:${c.w}px;${extraStyle}">${content||c.label}</th>`;
+}
+function stickyTd(i, content, extraStyle=''){
+  const c = STICKY_COLS[i];
+  return `<td style="position:sticky;left:${c.left}px;z-index:2;background:var(--bg2);min-width:${c.w}px;width:${c.w}px;${extraStyle}">${content}</td>`;
+}
+function stickyTdBg(i, content, bg, extraStyle=''){
+  const c = STICKY_COLS[i];
+  return `<td style="position:sticky;left:${c.left}px;z-index:2;background:${bg};min-width:${c.w}px;width:${c.w}px;${extraStyle}">${content}</td>`;
+}
 function getSvcAlloc(svcName, w){
   // Total allocation assigned to this base service in week w
   return state.assignments

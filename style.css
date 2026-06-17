@@ -12,7 +12,7 @@
     --text4:     #9ca3af;
     --accent:    #1D9E75;
     --accent2:   #0f6e56;
-    --green-bg:  var(--green-bg);
+    --green-bg:  #f0fdf8;
     --green-text:#0f6e56;
   }
   body.dark {
@@ -36,16 +36,27 @@
   .app { display: flex; height: 100vh; overflow: hidden; }
 
   /* ── Sidebar ── */
-  .sidebar { width: 220px; flex-shrink: 0; background: var(--bg2); border-right: 1px solid var(--border); display: flex; flex-direction: column; }
+  .sidebar { width: 220px; flex-shrink: 0; background: var(--bg2); border-right: 1px solid var(--border); display: flex; flex-direction: column; transition: width 0.2s ease; overflow: hidden; }
+  .sidebar.collapsed { width: 48px; }
+  .sidebar.collapsed .nav-section,
+  .sidebar.collapsed .nav-item span:not(.nav-icon),
+  .sidebar.collapsed .sidebar-foot,
+  .sidebar.collapsed .logo-text,
+  .sidebar.collapsed .sidebar-actions { display: none; }
+  .sidebar.collapsed .nav-item { justify-content: center; padding: 9px 0; }
+  .sidebar.collapsed .logo { justify-content: center; padding: 20px 0 10px; }
+  .sidebar-toggle { position: absolute; top: 16px; left: 196px; z-index: 10; width: 24px; height: 24px; background: var(--bg2); border: 1px solid var(--border); border-radius: 50%; display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 11px; color: var(--text3); transition: left 0.2s ease; box-shadow: 0 1px 4px rgba(0,0,0,0.08); }
+  .sidebar.collapsed ~ .sidebar-toggle,
+  .sidebar.collapsed + .sidebar-toggle { left: 36px; }
   .logo { padding: 20px 18px 10px; font-size: 14px; font-weight: 700; display: flex; align-items: center; gap: 8px; color: var(--text); }
-  .logo-dot { width: 9px; height: 9px; background: #1D9E75; border-radius: 50%; }
-  .nav-section { padding: 14px 18px 4px; font-size: 10px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text4); }
-  .nav-item { display: flex; align-items: center; gap: 10px; padding: 9px 18px; font-size: 13px; font-weight: 500; color: var(--text3); cursor: pointer; border-left: 2px solid transparent; transition: all 0.1s; }
+  .logo-dot { width: 9px; height: 9px; background: #1D9E75; border-radius: 50%; flex-shrink: 0; }
+  .nav-section { padding: 14px 18px 4px; font-size: 10px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text4); white-space: nowrap; }
+  .nav-item { display: flex; align-items: center; gap: 10px; padding: 9px 18px; font-size: 13px; font-weight: 500; color: var(--text3); cursor: pointer; border-left: 2px solid transparent; transition: all 0.1s; white-space: nowrap; }
   .nav-item:hover { background: var(--bg3); color: var(--text); }
   .nav-item.active { background: var(--green-bg); color: var(--green-text); border-left-color: #E32118; font-weight: 600; }
-  .nav-icon { font-size: 15px; }
+  .nav-icon { font-size: 15px; flex-shrink: 0; }
   .sidebar-div { height: 1px; background: var(--border); margin: 8px 18px; }
-  .sidebar-foot { margin-top: auto; padding: 12px 18px; border-top: 1px solid #e5e7eb; font-size: 11px; color: var(--text4); font-family: 'DM Mono', monospace; }
+  .sidebar-foot { margin-top: auto; padding: 12px 18px; border-top: 1px solid #e5e7eb; font-size: 11px; color: var(--text4); font-family: 'DM Mono', monospace; white-space: nowrap; overflow: hidden; }
 
   /* ── Main ── */
   .main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
@@ -84,6 +95,31 @@
   .ao { background: rgba(220,38,38,0.12) !important; color: #b91c1c; }
   .af { background: rgba(16,185,129,0.12) !important; color: #065f46; }
   .ap { background: rgba(245,158,11,0.12) !important; color: #92400e; }
+
+  /* ── Current week highlight ── */
+  .wk-now-hdr {
+    background: var(--green-bg) !important;
+    color: #0f6e56 !important;
+    position: relative;
+  }
+  .wk-now-hdr::after {
+    content: '';
+    display: block;
+    width: 4px;
+    height: 4px;
+    background: #1D9E75;
+    border-radius: 50%;
+    margin: 2px auto 0;
+  }
+  .wk-now {
+    background: rgba(29,158,117,0.07) !important;
+    outline: 1px solid rgba(29,158,117,0.25);
+    outline-offset: -1px;
+  }
+  /* When a cell has both a status colour and current-week, let status colour win but keep the outline */
+  .ao.wk-now { outline-color: rgba(220,38,38,0.4); }
+  .af.wk-now { outline-color: rgba(16,185,129,0.5); }
+  .ap.wk-now { outline-color: rgba(245,158,11,0.4); }
 
   /* ── Forms ── */
   .sec-title { font-size: 10px; font-weight: 700; color: var(--text3); text-transform: uppercase; letter-spacing: 0.07em; padding-bottom: 10px; border-bottom: 1px solid var(--bg4); margin-bottom: 14px; }

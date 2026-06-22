@@ -8,12 +8,10 @@ const CURRENT_WEEK = Math.min(Math.max(Math.ceil((_dayOfYear + _startOfYear.getD
 
 // ── Week header/cell helpers ──────────────────────────────────────────────
 function wkHdr(w){
-  const isCurrent = w === CURRENT_WEEK;
-  return `<th class="wk${isCurrent?' wk-now-hdr':''}" title="${isCurrent?'Current week':'Week '+w}">W${w}</th>`;
+  return `<th class="wk">W${w}</th>`;
 }
 function wkCell(w, alloc){
-  const cls = ('wk ' + wClass(alloc) + (w===CURRENT_WEEK?' wk-now':'')).trim();
-  return `<td class="${cls}">${alloc>0?alloc+'%':'–'}</td>`;
+  return `<td class="wk ${wClass(alloc)}">${alloc>0?alloc+'%':'–'}</td>`;
 }
 // Returns the weeks to show in allocation tables
 function visibleWeeks(){ return state.showAllWeeks ? WEEKS : WEEKS.slice(CURRENT_WEEK-1); }
@@ -543,7 +541,7 @@ function renderProjectDetail(){
           const statusBadge=a.committed?`<span class="badge b-committed" style="white-space:nowrap">✓ Committed</span><div style="font-size:10px;color:#9ca3af;margin-bottom:4px">${a.committedBy}</div>${ce?`<button class="btn danger sm" style="font-size:10px;padding:2px 6px" onclick="uncommitA(${realIdx})">↩ Uncommit</button>`:''}`:`<span class="badge b-plan">Planned</span>${ce?`<div style="margin-top:4px"><button class="btn primary sm" onclick="commitA(${realIdx})">🔒 Commit</button></div>`:''}`;
           const weekCells=visibleWeeks().map(w=>wkCell(w,getAlloc(a,w))).join('');
           const periodRows=a.periods.map((p,pi)=>{
-            const pWeeks=visibleWeeks().map(w=>{ const inRange=w>=p.startWeek&&w<=p.endWeek; return `<td class="wk${w===CURRENT_WEEK?' wk-now':''}" style="font-size:10px;${inRange?'background:rgba(29,158,117,0.08);color:#0f6e56':''}">${inRange?p.allocationPercent+'%':''}</td>`; }).join('');
+            const pWeeks=visibleWeeks().map(w=>{ const inRange=w>=p.startWeek&&w<=p.endWeek; return `<td class="wk" style="font-size:10px;${inRange?'background:rgba(29,158,117,0.08);color:#0f6e56':''}">${inRange?p.allocationPercent+'%':''}</td>`; }).join('');
             return `<tr style="background:#fafafa"><td colspan="4" style="padding:4px 12px 4px 28px;font-size:11px;color:#6b7280">Period ${pi+1}: W${p.startWeek}–${p.endWeek} · ${p.allocationPercent}%</td><td style="padding:4px 12px">${ce?`<button class="btn danger sm" style="padding:2px 6px;font-size:10px" onclick="delPeriod(${realIdx},${pi})">🗑</button>`:''}</td>${pWeeks}${ce?'<td></td>':''}</tr>`;
           }).join('');
           return `<tr style="background:var(--green-bg);border-top:2px solid #e5e7eb">
@@ -701,7 +699,7 @@ function renderTeamDetail(){
     return person.assignments.map(a=>{
       const label=r==='Project Manager'&&!a.committed?'— Planned —':a.workName, idx=state.assignments.indexOf(a);
       const statusDot=a.committed?`<span style="background:#d1fae5;color:#065f46;padding:1px 7px;border-radius:20px;font-size:10px;font-weight:700;white-space:nowrap">✓ Committed</span>${ce?`<button class="btn danger sm" style="font-size:10px;padding:1px 6px;margin-left:4px" onclick="uncommitA(${idx})">↩</button>`:''}`:`<span style="background:#fef3c7;color:#92400e;padding:1px 7px;border-radius:20px;font-size:10px;font-weight:700;white-space:nowrap">⏳ Planned</span>${ce?`<button class="btn primary sm" style="font-size:10px;padding:1px 6px;margin-left:4px" onclick="commitA(${idx})">🔒 Commit</button>`:''}`;
-      const weekCells=visibleWeeks().map(w=>{ const al=getAlloc(a,w); return `<td class="wk ${wCls(al)}${w===CURRENT_WEEK?' wk-now':''}" style="font-size:10px">${al>0?al+'%':''}</td>`; }).join('');
+      const weekCells=visibleWeeks().map(w=>{ const al=getAlloc(a,w); return `<td class="wk ${wCls(al)}" style="font-size:10px">${al>0?al+'%':''}</td>`; }).join('');
       return `<tr style="background:#fafafa">
         <td style="padding:5px 12px 5px 28px;font-size:12px;color:#374151;white-space:nowrap">${label}</td>
         <td style="padding:5px 12px;font-size:11px;color:#9ca3af">${a.type}</td>
@@ -712,7 +710,7 @@ function renderTeamDetail(){
   }
   const memberRows=people.map(person=>{
     const totalAllocs=WEEKS.map(w=>getPersonTotalAlloc(person,w));
-    const weekCells=visibleWeeks().map(w=>{ const t=totalAllocs[WEEKS.indexOf(w)]; return `<td class="wk ${wCls(t)}${w===CURRENT_WEEK?' wk-now':''}" style="font-weight:700">${t>0?t+'%':'–'}</td>`; }).join('');
+    const weekCells=visibleWeeks().map(w=>{ const t=totalAllocs[WEEKS.indexOf(w)]; return `<td class="wk ${wCls(t)}" style="font-weight:700">${t>0?t+'%':'–'}</td>`; }).join('');
     const badge=person.registered?`<span style="background:#e0f2fe;color:#075985;font-size:10px;font-weight:700;padding:1px 6px;border-radius:20px;margin-left:6px">Member</span>`:`<span style="background:#f3f4f6;color:#6b7280;font-size:10px;font-weight:700;padding:1px 6px;border-radius:20px;margin-left:6px">Planning</span>`;
     const isEditing=ce&&person.registered&&state.editingMemberId===person.id;
     const editRow=isEditing?`<tr style="background:var(--green-bg)"><td colspan="${6+visibleWeeks().length}" style="padding:0"><div class="edit-member-panel"><div style="font-size:11px;font-weight:700;color:#0f6e56;margin-bottom:12px;text-transform:uppercase;letter-spacing:.05em">✏ Editing: ${person.name}</div><div class="fgrid"><div class="fg"><label class="lbl">Full name</label><input class="inp" id="em-name-${person.id}" placeholder="${state.emName}" oninput="state.emName=this.value" /></div><div class="fg"><label class="lbl">Country</label><select class="sel" onchange="state.emCountry=this.value"><option value="Sweden"${state.emCountry==='Sweden'?' selected':''}>Sweden</option><option value="Poland"${state.emCountry==='Poland'?' selected':''}>Poland</option></select></div><div class="fg"><label class="lbl">Skillset</label><input class="inp" id="em-skill-${person.id}" placeholder="${state.emSkill}" oninput="state.emSkill=this.value" /></div><div class="fg"><label class="lbl">Level</label><select class="sel" onchange="state.emLevel=this.value"><option${state.emLevel==='Junior'?' selected':''}>Junior</option><option${state.emLevel==='Mid'?' selected':''}>Mid</option><option${state.emLevel==='Senior'?' selected':''}>Senior</option></select></div><div class="fg"><label class="lbl">Teamlead</label><input class="inp" id="em-tl-${person.id}" placeholder="${state.emTeamlead||'inherit from team'}" list="people-list-optional" autocomplete="off" oninput="state.emTeamlead=this.value" /></div><div class="fg"><label class="lbl">Manager</label><input class="inp" id="em-mgr-${person.id}" placeholder="${state.emManager||'inherit from team'}" list="people-list-optional" autocomplete="off" oninput="state.emManager=this.value" /></div><div style="display:flex;gap:8px;padding-top:4px;align-items:flex-end;grid-column:1/-1"><button class="btn primary sm" onclick="saveMemberEditFromInputs(${person.id})">✓ Save</button><button class="btn sm" onclick="state.editingMemberId=null;render()">✕ Cancel</button><button class="btn danger sm" onclick="removeTeamMember(${person.id})">🗑 Remove</button></div></div></div></td></tr>`:'';

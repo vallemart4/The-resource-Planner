@@ -542,7 +542,7 @@ function renderProjectDetail(){
           const weekCells=visibleWeeks().map(w=>wkCell(w,getAlloc(a,w))).join('');
           const periodRows=a.periods.map((p,pi)=>{
             const pWeeks=visibleWeeks().map(w=>{ const inRange=w>=p.startWeek&&w<=p.endWeek; return `<td class="wk" style="font-size:10px;${inRange?'background:rgba(29,158,117,0.08);color:#0f6e56':''}">${inRange?p.allocationPercent+'%':''}</td>`; }).join('');
-            return `<tr style="background:#fafafa"><td colspan="4" style="padding:4px 12px 4px 28px;font-size:11px;color:#6b7280">Period ${pi+1}: W${p.startWeek}–${p.endWeek} · ${p.allocationPercent}%</td><td style="padding:4px 12px">${ce?`<button class="btn danger sm" style="padding:2px 6px;font-size:10px" onclick="delPeriod(${realIdx},${pi})">🗑</button>`:''}</td>${pWeeks}${ce?'<td></td>':''}</tr>`;
+            return `<tr style="background:#fafafa"><td colspan="5" style="padding:4px 12px 4px 28px;font-size:11px;color:#6b7280">Period ${pi+1}: W${p.startWeek}–${p.endWeek} · ${p.allocationPercent}%  ${ce?`<button class="btn danger sm" style="padding:2px 6px;font-size:10px" onclick="delPeriod(${realIdx},${pi})">🗑</button>`:''}</td>${pWeeks}${ce?'<td></td>':''}</tr>`;
           }).join('');
           return `<tr style="background:var(--green-bg);border-top:2px solid #e5e7eb">
             <td style="padding:10px 12px;font-size:13px;font-weight:700">${showName}</td>
@@ -703,7 +703,7 @@ function renderTeamDetail(){
       return `<tr style="background:#fafafa">
         <td style="padding:5px 12px 5px 28px;font-size:12px;color:#374151;white-space:nowrap">${label}</td>
         <td style="padding:5px 12px;font-size:11px;color:#9ca3af">${a.type}</td>
-        <td colspan="2" style="padding:5px 12px;white-space:nowrap">${statusDot}</td>
+        <td colspan="3" style="padding:5px 12px;white-space:nowrap">${statusDot}</td>
         <td style="padding:5px 12px"></td>
         ${weekCells}${ce?`<td style="padding:5px 8px"></td>`:''}</tr>`;
     }).join('');

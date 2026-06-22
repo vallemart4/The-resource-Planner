@@ -59,7 +59,7 @@
   .sidebar-foot { margin-top: auto; padding: 12px 18px; border-top: 1px solid #e5e7eb; font-size: 11px; color: var(--text4); font-family: 'DM Mono', monospace; white-space: nowrap; overflow: hidden; }
 
   /* ── Main ── */
-  .main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+  .main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
   .topbar { display: flex; align-items: center; justify-content: space-between; padding: 0 24px; height: 56px; background: var(--bg2); border-bottom: 1px solid var(--border); flex-shrink: 0; }
   .topbar-title { font-size: 16px; font-weight: 700; color: var(--text); }
   .topbar-right { display: flex; align-items: center; gap: 10px; }
@@ -88,10 +88,14 @@
   .tbl-wrap { overflow-x: auto; }
   .tbl-scroll-to-now { overflow-x: auto; border-radius: 0 0 12px 12px; }
   table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  /* sticky needs separate borders — override for scrollable tables */
+  .tbl-scroll-to-now table { border-collapse: separate; border-spacing: 0; }
   th { padding: 9px 12px; text-align: left; font-size: 10px; font-weight: 700; color: var(--text3); background: var(--bg3); border-bottom: 1px solid var(--border); white-space: nowrap; text-transform: uppercase; letter-spacing: 0.05em; font-family: 'DM Mono', monospace; }
   td { padding: 9px 12px; border-bottom: 1px solid var(--bg4); color: var(--text2); white-space: nowrap; vertical-align: middle; }
   tr:last-child td { border-bottom: none; }
   tr:hover td { background: var(--bg3); }
+  /* keep sticky cell backgrounds on hover */
+  tr:hover td[style*="position:sticky"] { filter: brightness(0.97); }
   .wk { text-align: center; font-family: 'DM Mono', monospace; font-size: 11px; font-weight: 600; min-width: 36px; }
   .ao { background: rgba(220,38,38,0.12) !important; color: #b91c1c; }
   .af { background: rgba(16,185,129,0.12) !important; color: #065f46; }

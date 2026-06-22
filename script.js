@@ -527,7 +527,8 @@ function renderProjectDetail(){
     </div>`:''}
     <div class="card">
       <div class="card-hdr"><span class="card-title">📅 Weekly allocation — all 52 weeks</span><span class="card-sub">Green row = person total · White rows = per-period breakdown</span></div>
-      ${visAssignments.length===0?`<div class="empty"><span class="empty-icon">👤</span>No resources assigned yet. Add one above!</div>`:`<div class="tbl-wrap tbl-scroll-to-now"><table style="min-width:${STICKY_TOTAL+52*38}px">
+      ${visAssignments.length===0?`<div class="empty"><span class="empty-icon">👤</span>No resources assigned yet. Add one above!</div>`:`<div class="tbl-wrap tbl-scroll-to-now"><table style="min-width:${STICKY_TOTAL+52*38}px;table-layout:fixed;border-collapse:collapse">
+        ${stickyColgroup()}
         <thead><tr>
           ${stickyTh(0,'Resource')}${stickyTh(1,'Skill')}${stickyTh(2,'Level')}${stickyTh(3,'Country')}${stickyTh(4,'Status')}
           ${WEEKS.map(w=>wkHdr(w)).join('')}
@@ -779,10 +780,12 @@ function renderTeamDetail(){
     ${ce?`<div class="card" style="margin-bottom:16px"><div class="card-hdr"><span class="card-title">＋ Add team member</span></div><div class="card-body" style="display:flex;flex-direction:column;gap:14px"><div style="display:grid;grid-template-columns:1.5fr 1fr 1.5fr 1fr auto;gap:12px;align-items:flex-end"><div class="fg"><label class="lbl">Full name *</label><input class="inp" id="inp-tmName" list="people-list" placeholder="Type or pick a name…" autocomplete="off" oninput="onPersonInput(this.value,'tm')" /></div><div class="fg"><label class="lbl">Country</label><select class="sel" onchange="state.tmCountry=this.value"><option value="Sweden"${state.tmCountry==='Sweden'?' selected':''}>Sweden</option><option value="Poland"${state.tmCountry==='Poland'?' selected':''}>Poland</option></select></div><div class="fg"><label class="lbl">Skillset *</label><input class="inp" id="inp-tmSkill" placeholder="e.g. React, DevOps" oninput="state.tmSkill=this.value" onkeydown="if(event.key==='Enter')addTeamMember()" /></div><div class="fg"><label class="lbl">Level</label><select class="sel" onchange="state.tmLevel=this.value"><option${state.tmLevel==='Junior'?' selected':''}>Junior</option><option${state.tmLevel==='Mid'?' selected':''}>Mid</option><option${state.tmLevel==='Senior'?' selected':''}>Senior</option></select></div><button class="btn primary" onclick="addTeamMember()" style="white-space:nowrap">＋ Add member</button></div><div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;padding:12px;background:#f9fafb;border-radius:8px;border:1px solid #f3f4f6"><div class="fg"><label class="lbl">Teamlead override <span style="color:#9ca3af;font-weight:400">— blank = team default: <strong>${state.teamConfig[state.selectedTeam]?.teamlead||'none set'}</strong></span></label><input class="inp" id="inp-tmTl" list="people-list-optional" placeholder="Blank = inherit from team" autocomplete="off" oninput="state.tmTeamlead=this.value" /></div><div class="fg"><label class="lbl">Manager override <span style="color:#9ca3af;font-weight:400">— blank = team default: <strong>${state.teamConfig[state.selectedTeam]?.manager||'none set'}</strong></span></label><input class="inp" id="inp-tmMgr" list="people-list-optional" placeholder="Blank = inherit from team" autocomplete="off" oninput="state.tmManager=this.value" /></div></div></div></div>`:''}
     <div class="card">
       <div class="card-hdr"><span class="card-title">📅 Weekly allocation — all 52 weeks</span><span class="card-sub">Green row = person total · White rows = per-assignment breakdown</span></div>
-      ${people.length===0?`<div class="empty"><span class="empty-icon">👥</span>No team members in ${teamName} yet.</div>`:`<div class="tbl-wrap tbl-scroll-to-now"><table style="min-width:${STICKY_TOTAL+52*38}px"><thead><tr>
-              ${stickyTh(0,'Name')}${stickyTh(1,'Skill')}${stickyTh(2,'Level')}${stickyTh(3,'Country')}${stickyTh(4,'Reporting')}${stickyTh(5,'Assignments')}
-              ${WEEKS.map(w=>wkHdr(w)).join('')}${ce?'<th></th>':''}
-            </tr></thead><tbody>${memberRows}</tbody></table></div>`}
+      ${people.length===0?`<div class="empty"><span class="empty-icon">👥</span>No team members in ${teamName} yet.</div>`:`<div class="tbl-wrap tbl-scroll-to-now"><table style="min-width:${STICKY_TOTAL+52*38}px;table-layout:fixed;border-collapse:collapse">
+              ${stickyColgroup()}
+              <thead><tr>
+                ${stickyTh(0,'Name')}${stickyTh(1,'Skill')}${stickyTh(2,'Level')}${stickyTh(3,'Country')}${stickyTh(4,'Reporting')}${stickyTh(5,'Assignments')}
+                ${WEEKS.map(w=>wkHdr(w)).join('')}${ce?'<th style="width:40px"></th>':''}
+              </tr></thead><tbody>${memberRows}</tbody></table></div>`}
     </div>`;
 }
 
@@ -930,8 +933,10 @@ function renderOverview(){
   if(!people.length){
     rows=`<div class="empty"><span class="empty-icon">👥</span>${allPeople.length?'No results match your filters.':'No allocations yet. Go to Planning mode to get started.'}</div>`;
   } else {
-    rows=`<div class="tbl-wrap tbl-scroll-to-now"><table style="min-width:${STICKY_TOTAL+52*38}px"><thead><tr>
-        ${stickyTh(0)}${stickyTh(1)}${stickyTh(2)}${stickyTh(3)}${stickyTh(4)}${stickyTh(5)}
+    rows=`<div class="tbl-wrap tbl-scroll-to-now"><table style="min-width:${STICKY_TOTAL+52*38}px;table-layout:fixed;border-collapse:collapse">
+      ${stickyColgroup()}
+      <thead><tr>
+        ${stickyTh(0,'Name')}${stickyTh(1,'Skill')}${stickyTh(2,'Level')}${stickyTh(3,'Country')}${stickyTh(4,'Team')}${stickyTh(5,'Status')}
         ${WEEKS.map(w=>wkHdr(w)).join('')}
       </tr></thead><tbody>${people.map(p=>{
       const dn=(r==='Project Manager'&&visibleAssignments().some(a=>a.name===p.name&&!a.committed))?'— Planned resource —':p.name;
@@ -941,11 +946,11 @@ function renderOverview(){
       const clickAttr=ce?`onclick="openPersonDetail('${p.name.replace(/'/g,"\\'")}')"`:'';
       const nameBg = cBg(p.country);
       return `<tr class="${ce?'person-row-click':''}" ${clickAttr}>
-        ${stickyTdBg(0,`<strong>${dn}</strong>${ce?`<span style="font-size:10px;color:#9ca3af;margin-left:6px">→</span>`:''}`,nameBg,'padding:9px 12px')}
-        ${stickyTd(1,`<span style="cursor:pointer;color:#1D9E75;text-decoration:underline" onclick="event.stopPropagation();openTeam('${p.team}')">${p.team}</span>`,'padding:9px 12px')}
-        ${stickyTd(2,p.country,'padding:9px 12px')}
-        ${stickyTd(3,p.skillset,'padding:9px 12px')}
-        ${stickyTd(4,p.level,'padding:9px 12px')}
+        ${stickyTdBg(0,`<strong style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block">${dn}</strong>`,nameBg,'padding:9px 12px')}
+        ${stickyTd(1,p.skillset,'padding:9px 12px;overflow:hidden;text-overflow:ellipsis')}
+        ${stickyTd(2,p.level,'padding:9px 12px')}
+        ${stickyTd(3,p.country,'padding:9px 12px')}
+        ${stickyTd(4,`<span style="cursor:pointer;color:#1D9E75;text-decoration:underline" onclick="event.stopPropagation();openTeam('${p.team}')">${p.team}</span>`,'padding:9px 12px')}
         ${stickyTd(5,statusBadge,'padding:9px 12px')}
         ${WEEKS.map(w=>wkCell(w,getTotalAlloc(p.name,w))).join('')}
       </tr>`;
@@ -984,30 +989,35 @@ function renderProjects(){
 }
 
 // ── Sticky column helpers ─────────────────────────────────────────────────
-// left offsets for the 6 fixed columns: Person, Team, Country, Skill, Level, Status
 const STICKY_COLS = [
-  { w: 150, label: 'Person'  },
-  { w:  90, label: 'Team'    },
-  { w:  80, label: 'Country' },
-  { w: 110, label: 'Skill'   },
-  { w:  70, label: 'Level'   },
-  { w: 110, label: 'Status'  },
+  { w: 160, label: 'Person'      },
+  { w:  90, label: 'Skill'       },
+  { w:  70, label: 'Level'       },
+  { w:  80, label: 'Country'     },
+  { w: 120, label: 'Reporting'   },
+  { w:  90, label: 'Assignments' },
 ];
-// Pre-compute left offsets
 STICKY_COLS.forEach((c,i)=>{ c.left = STICKY_COLS.slice(0,i).reduce((s,x)=>s+x.w,0); });
 const STICKY_TOTAL = STICKY_COLS.reduce((s,c)=>s+c.w,0);
 
+// colgroup pins exact widths so header and body always align
+function stickyColgroup(){
+  return '<colgroup>'
+    + STICKY_COLS.map(c=>`<col style="width:${c.w}px;min-width:${c.w}px">`).join('')
+    + WEEKS.map(()=>'<col style="width:38px;min-width:36px">').join('')
+    + '</colgroup>';
+}
 function stickyTh(i, content='', extraStyle=''){
   const c = STICKY_COLS[i];
-  return `<th style="position:sticky;left:${c.left}px;z-index:3;background:var(--bg3);min-width:${c.w}px;width:${c.w}px;${extraStyle}">${content||c.label}</th>`;
+  return `<th style="position:sticky;left:${c.left}px;z-index:3;background:var(--bg3);width:${c.w}px;${extraStyle}">${content||c.label}</th>`;
 }
 function stickyTd(i, content, extraStyle=''){
   const c = STICKY_COLS[i];
-  return `<td style="position:sticky;left:${c.left}px;z-index:2;background:var(--bg2);min-width:${c.w}px;width:${c.w}px;${extraStyle}">${content}</td>`;
+  return `<td style="position:sticky;left:${c.left}px;z-index:2;background:var(--bg2);width:${c.w}px;${extraStyle}">${content}</td>`;
 }
 function stickyTdBg(i, content, bg, extraStyle=''){
   const c = STICKY_COLS[i];
-  return `<td style="position:sticky;left:${c.left}px;z-index:2;background:${bg};min-width:${c.w}px;width:${c.w}px;${extraStyle}">${content}</td>`;
+  return `<td style="position:sticky;left:${c.left}px;z-index:2;background:${bg};width:${c.w}px;${extraStyle}">${content}</td>`;
 }
 function getSvcAlloc(svcName, w){
   // Total allocation assigned to this base service in week w

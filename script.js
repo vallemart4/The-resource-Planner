@@ -15,6 +15,8 @@ function wkCell(w, alloc){
   const cls = ('wk ' + wClass(alloc) + (w===CURRENT_WEEK?' wk-now':'')).trim();
   return `<td class="${cls}">${alloc>0?alloc+'%':'–'}</td>`;
 }
+// Returns the weeks to show in allocation tables
+function visibleWeeks(){ return state.showAllWeeks ? WEEKS : WEEKS.slice(CURRENT_WEEK-1); }
 
 let _debounceTimer = null;
 function debounce(fn, ms){ clearTimeout(_debounceTimer); _debounceTimer = setTimeout(fn, ms); }
@@ -116,6 +118,7 @@ let state = {
   fTeam:'', fSkill:'', fLevel:'', fName:'', fAssignment:'', fStatus:'',
   dashAllocRange: 8,
   selectedPerson: null,
+  showAllWeeks: false,
 };
 
 function role(){ return document.getElementById('role-sel').value; }
@@ -527,11 +530,11 @@ function renderProjectDetail(){
     </div>`:''}
     <div class="card">
       <div class="card-hdr"><span class="card-title">📅 Weekly allocation — all 52 weeks</span><span class="card-sub">Green row = person total · White rows = per-period breakdown</span></div>
-      ${visAssignments.length===0?`<div class="empty"><span class="empty-icon">👤</span>No resources assigned yet. Add one above!</div>`:`<div class="tbl-wrap tbl-scroll-to-now"><table style="min-width:${STICKY_TOTAL+52*38}px;table-layout:fixed;border-collapse:collapse">
+      ${visAssignments.length===0?`<div class="empty"><span class="empty-icon">👤</span>No resources assigned yet. Add one above!</div>`:`<div class="tbl-wrap tbl-scroll-to-now"><table style="min-width:${STICKY_TOTAL+visibleWeeks().length*38}px;table-layout:fixed;border-collapse:collapse">
         ${stickyColgroup()}
         <thead><tr>
           ${stickyTh(0,'Resource')}${stickyTh(1,'Skill')}${stickyTh(2,'Level')}${stickyTh(3,'Country')}${stickyTh(4,'Status')}
-          ${WEEKS.map(w=>wkHdr(w)).join('')}
+          ${visibleWeeks().map(w=>wkHdr(w)).join('')}
           ${ce?'<th style="position:sticky;right:0;z-index:3;background:#f9fafb"></th>':''}
         </tr></thead>
         <tbody>${visAssignments.map(a=>{
@@ -539,9 +542,9 @@ function renderProjectDetail(){
           const rawName=a.name&&a.name.startsWith('__pm_planned__')?'No name':a.name;
           const showName=r==='Project Manager'?(a.committed?rawName:'No name'):rawName;
           const statusBadge=a.committed?`<span class="badge b-committed" style="white-space:nowrap">✓ Committed</span><div style="font-size:10px;color:#9ca3af;margin-bottom:4px">${a.committedBy}</div>${ce?`<button class="btn danger sm" style="font-size:10px;padding:2px 6px" onclick="uncommitA(${realIdx})">↩ Uncommit</button>`:''}`:`<span class="badge b-plan">Planned</span>${ce?`<div style="margin-top:4px"><button class="btn primary sm" onclick="commitA(${realIdx})">🔒 Commit</button></div>`:''}`;
-          const weekCells=WEEKS.map(w=>wkCell(w,getAlloc(a,w))).join('');
+          const weekCells=visibleWeeks().map(w=>wkCell(w,getAlloc(a,w))).join('');
           const periodRows=a.periods.map((p,pi)=>{
-            const c0=STICKY_COLS[0], pWeeks=WEEKS.map(w=>{ const inRange=w>=p.startWeek&&w<=p.endWeek; return `<td class="wk${w===CURRENT_WEEK?' wk-now':''}" style="font-size:10px;${inRange?'background:rgba(29,158,117,0.08);color:#0f6e56':''}">${inRange?p.allocationPercent+'%':''}</td>`; }).join('');
+            const c0=STICKY_COLS[0], pWeeks=visibleWeeks().map(w=>{ const inRange=w>=p.startWeek&&w<=p.endWeek; return `<td class="wk${w===CURRENT_WEEK?' wk-now':''}" style="font-size:10px;${inRange?'background:rgba(29,158,117,0.08);color:#0f6e56':''}">${inRange?p.allocationPercent+'%':''}</td>`; }).join('');
             return `<tr style="background:#fafafa"><td style="position:sticky;left:${c0.left}px;z-index:2;background:#fafafa;padding:4px 12px 4px 28px;font-size:11px;color:#6b7280;min-width:${c0.w}px" colspan="1">Period ${pi+1}: W${p.startWeek}–${p.endWeek} · ${p.allocationPercent}%</td><td colspan="3" style="padding:4px 12px"></td><td style="padding:4px 12px">${ce?`<button class="btn danger sm" style="padding:2px 6px;font-size:10px" onclick="delPeriod(${realIdx},${pi})">🗑</button>`:''}</td>${pWeeks}${ce?'<td style="position:sticky;right:0;background:#fafafa"></td>':''}</tr>`;
           }).join('');
           const bg='var(--green-bg)';
@@ -700,7 +703,7 @@ function renderTeamDetail(){
     return person.assignments.map(a=>{
       const label=r==='Project Manager'&&!a.committed?'— Planned —':a.workName, idx=state.assignments.indexOf(a);
       const statusDot=a.committed?`<span style="background:#d1fae5;color:#065f46;padding:1px 7px;border-radius:20px;font-size:10px;font-weight:700;white-space:nowrap">✓ Committed</span>${ce?`<button class="btn danger sm" style="font-size:10px;padding:1px 6px;margin-left:4px" onclick="uncommitA(${idx})">↩</button>`:''}`:`<span style="background:#fef3c7;color:#92400e;padding:1px 7px;border-radius:20px;font-size:10px;font-weight:700;white-space:nowrap">⏳ Planned</span>${ce?`<button class="btn primary sm" style="font-size:10px;padding:1px 6px;margin-left:4px" onclick="commitA(${idx})">🔒 Commit</button>`:''}`;
-      const weekCells=WEEKS.map(w=>{ const al=getAlloc(a,w); return `<td class="wk ${wCls(al)}${w===CURRENT_WEEK?' wk-now':''}" style="font-size:10px">${al>0?al+'%':''}</td>`; }).join('');
+      const weekCells=visibleWeeks().map(w=>{ const al=getAlloc(a,w); return `<td class="wk ${wCls(al)}${w===CURRENT_WEEK?' wk-now':''}" style="font-size:10px">${al>0?al+'%':''}</td>`; }).join('');
       return `<tr style="background:#fafafa">
         ${(()=>{ const c=STICKY_COLS[0]; return `<td style="position:sticky;left:${c.left}px;z-index:2;background:#fafafa;min-width:${c.w}px;padding:5px 12px 5px 28px;font-size:12px;color:#374151;white-space:nowrap">${label}</td>`; })()}
         ${(()=>{ const c=STICKY_COLS[1]; return `<td style="position:sticky;left:${c.left}px;z-index:2;background:#fafafa;min-width:${c.w}px;padding:5px 12px;font-size:11px;color:#9ca3af">${a.type}</td>`; })()}
@@ -711,7 +714,7 @@ function renderTeamDetail(){
   }
   const memberRows=people.map(person=>{
     const totalAllocs=WEEKS.map(w=>getPersonTotalAlloc(person,w));
-    const weekCells=WEEKS.map((w,i)=>{ const t=totalAllocs[i]; return `<td class="wk ${wCls(t)}${w===CURRENT_WEEK?' wk-now':''}" style="font-weight:700">${t>0?t+'%':'–'}</td>`; }).join('');
+    const weekCells=visibleWeeks().map((w,i)=>{ const t=totalAllocs[WEEKS.indexOf(w)]; return `<td class="wk ${wCls(t)}${w===CURRENT_WEEK?' wk-now':''}" style="font-weight:700">${t>0?t+'%':'–'}</td>`; }).join('');
     const badge=person.registered?`<span style="background:#e0f2fe;color:#075985;font-size:10px;font-weight:700;padding:1px 6px;border-radius:20px;margin-left:6px">Member</span>`:`<span style="background:#f3f4f6;color:#6b7280;font-size:10px;font-weight:700;padding:1px 6px;border-radius:20px;margin-left:6px">Planning</span>`;
     const isEditing=ce&&person.registered&&state.editingMemberId===person.id;
     const editRow=isEditing?`<tr style="background:var(--green-bg)"><td colspan="${6+52}" style="padding:0"><div class="edit-member-panel"><div style="font-size:11px;font-weight:700;color:#0f6e56;margin-bottom:12px;text-transform:uppercase;letter-spacing:.05em">✏ Editing: ${person.name}</div><div class="fgrid"><div class="fg"><label class="lbl">Full name</label><input class="inp" id="em-name-${person.id}" placeholder="${state.emName}" oninput="state.emName=this.value" /></div><div class="fg"><label class="lbl">Country</label><select class="sel" onchange="state.emCountry=this.value"><option value="Sweden"${state.emCountry==='Sweden'?' selected':''}>Sweden</option><option value="Poland"${state.emCountry==='Poland'?' selected':''}>Poland</option></select></div><div class="fg"><label class="lbl">Skillset</label><input class="inp" id="em-skill-${person.id}" placeholder="${state.emSkill}" oninput="state.emSkill=this.value" /></div><div class="fg"><label class="lbl">Level</label><select class="sel" onchange="state.emLevel=this.value"><option${state.emLevel==='Junior'?' selected':''}>Junior</option><option${state.emLevel==='Mid'?' selected':''}>Mid</option><option${state.emLevel==='Senior'?' selected':''}>Senior</option></select></div><div class="fg"><label class="lbl">Teamlead</label><input class="inp" id="em-tl-${person.id}" placeholder="${state.emTeamlead||'inherit from team'}" list="people-list-optional" autocomplete="off" oninput="state.emTeamlead=this.value" /></div><div class="fg"><label class="lbl">Manager</label><input class="inp" id="em-mgr-${person.id}" placeholder="${state.emManager||'inherit from team'}" list="people-list-optional" autocomplete="off" oninput="state.emManager=this.value" /></div><div style="display:flex;gap:8px;padding-top:4px;align-items:flex-end;grid-column:1/-1"><button class="btn primary sm" onclick="saveMemberEditFromInputs(${person.id})">✓ Save</button><button class="btn sm" onclick="state.editingMemberId=null;render()">✕ Cancel</button><button class="btn danger sm" onclick="removeTeamMember(${person.id})">🗑 Remove</button></div></div></div></td></tr>`:'';
@@ -779,12 +782,12 @@ function renderTeamDetail(){
 
     ${ce?`<div class="card" style="margin-bottom:16px"><div class="card-hdr"><span class="card-title">＋ Add team member</span></div><div class="card-body" style="display:flex;flex-direction:column;gap:14px"><div style="display:grid;grid-template-columns:1.5fr 1fr 1.5fr 1fr auto;gap:12px;align-items:flex-end"><div class="fg"><label class="lbl">Full name *</label><input class="inp" id="inp-tmName" list="people-list" placeholder="Type or pick a name…" autocomplete="off" oninput="onPersonInput(this.value,'tm')" /></div><div class="fg"><label class="lbl">Country</label><select class="sel" onchange="state.tmCountry=this.value"><option value="Sweden"${state.tmCountry==='Sweden'?' selected':''}>Sweden</option><option value="Poland"${state.tmCountry==='Poland'?' selected':''}>Poland</option></select></div><div class="fg"><label class="lbl">Skillset *</label><input class="inp" id="inp-tmSkill" placeholder="e.g. React, DevOps" oninput="state.tmSkill=this.value" onkeydown="if(event.key==='Enter')addTeamMember()" /></div><div class="fg"><label class="lbl">Level</label><select class="sel" onchange="state.tmLevel=this.value"><option${state.tmLevel==='Junior'?' selected':''}>Junior</option><option${state.tmLevel==='Mid'?' selected':''}>Mid</option><option${state.tmLevel==='Senior'?' selected':''}>Senior</option></select></div><button class="btn primary" onclick="addTeamMember()" style="white-space:nowrap">＋ Add member</button></div><div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;padding:12px;background:#f9fafb;border-radius:8px;border:1px solid #f3f4f6"><div class="fg"><label class="lbl">Teamlead override <span style="color:#9ca3af;font-weight:400">— blank = team default: <strong>${state.teamConfig[state.selectedTeam]?.teamlead||'none set'}</strong></span></label><input class="inp" id="inp-tmTl" list="people-list-optional" placeholder="Blank = inherit from team" autocomplete="off" oninput="state.tmTeamlead=this.value" /></div><div class="fg"><label class="lbl">Manager override <span style="color:#9ca3af;font-weight:400">— blank = team default: <strong>${state.teamConfig[state.selectedTeam]?.manager||'none set'}</strong></span></label><input class="inp" id="inp-tmMgr" list="people-list-optional" placeholder="Blank = inherit from team" autocomplete="off" oninput="state.tmManager=this.value" /></div></div></div></div>`:''}
     <div class="card">
-      <div class="card-hdr"><span class="card-title">📅 Weekly allocation — all 52 weeks</span><span class="card-sub">Green row = person total · White rows = per-assignment breakdown</span></div>
-      ${people.length===0?`<div class="empty"><span class="empty-icon">👥</span>No team members in ${teamName} yet.</div>`:`<div class="tbl-wrap tbl-scroll-to-now"><table style="min-width:${STICKY_TOTAL+52*38}px;table-layout:fixed;border-collapse:collapse">
+      <div class="card-hdr"><span class="card-title">📅 Weekly allocation — all 52 weeks</span><div style="display:flex;align-items:center;gap:12px">${weekRangeToggle()}<span class="card-sub">Green row = person total · White rows = per-assignment breakdown</span></div></div>
+      ${people.length===0?`<div class="empty"><span class="empty-icon">👥</span>No team members in ${teamName} yet.</div>`:`<div class="tbl-wrap tbl-scroll-to-now"><table style="min-width:${STICKY_TOTAL+visibleWeeks().length*38}px;table-layout:fixed;border-collapse:collapse">
               ${stickyColgroup()}
               <thead><tr>
                 ${stickyTh(0,'Name')}${stickyTh(1,'Skill')}${stickyTh(2,'Level')}${stickyTh(3,'Country')}${stickyTh(4,'Reporting')}${stickyTh(5,'Assignments')}
-                ${WEEKS.map(w=>wkHdr(w)).join('')}${ce?'<th style="width:40px"></th>':''}
+                ${visibleWeeks().map(w=>wkHdr(w)).join('')}${ce?'<th style="width:40px"></th>':''}
               </tr></thead><tbody>${memberRows}</tbody></table></div>`}
     </div>`;
 }
@@ -851,21 +854,6 @@ function setTab(t){
 
 function flashMsg(text,ok){ state.msg={text,ok}; render(); setTimeout(()=>{state.msg=null;render();},3000); }
 
-function scrollToCurrentWeek(){
-  // Find all scrollable table wrappers and scroll so current week is visible
-  requestAnimationFrame(()=>{
-    document.querySelectorAll('.tbl-scroll-to-now').forEach(wrap=>{
-      const hdr = wrap.querySelector('.wk-now-hdr');
-      if(!hdr) return;
-      // Scroll so the current week header is roughly 1/3 from the left
-      const wrapLeft = wrap.getBoundingClientRect().left;
-      const hdrLeft  = hdr.getBoundingClientRect().left;
-      const offset   = hdrLeft - wrapLeft - (wrap.clientWidth * 0.25);
-      wrap.scrollLeft = Math.max(0, wrap.scrollLeft + offset);
-    });
-  });
-}
-
 function render(){
   buildDatalist(); updateSidebarForRole();
   const darkBtn=document.getElementById('dark-btn');
@@ -885,13 +873,13 @@ function render(){
       tac.innerHTML=buildTeamAllocCard(tm,aw,cw2,state);
     }
   }
-  else if(t==='overview'){ el.innerHTML=renderOverview(); scrollToCurrentWeek(); }
+  else if(t==='overview'){ el.innerHTML=renderOverview(); }
   else if(t==='person-detail') el.innerHTML=renderPersonDetail();
   else if(t==='planning') el.innerHTML=renderPlanning();
   else if(t==='projects') el.innerHTML=renderProjects();
-  else if(t==='project-detail'){ el.innerHTML=renderProjectDetail(); scrollToCurrentWeek(); }
+  else if(t==='project-detail'){ el.innerHTML=renderProjectDetail(); }
   else if(t==='services') el.innerHTML=renderServices();
-  else if(t==='team-detail'){ el.innerHTML=renderTeamDetail(); scrollToCurrentWeek(); }
+  else if(t==='team-detail'){ el.innerHTML=renderTeamDetail(); }
   else if(t==='inbox') el.innerHTML=renderInbox();
   else if(t==='pipeline') el.innerHTML=renderPipeline();
   else if(t==='add'){ if(role()==='Project Manager') state.addType='Project'; el.innerHTML=renderAdd(); }
@@ -933,11 +921,11 @@ function renderOverview(){
   if(!people.length){
     rows=`<div class="empty"><span class="empty-icon">👥</span>${allPeople.length?'No results match your filters.':'No allocations yet. Go to Planning mode to get started.'}</div>`;
   } else {
-    rows=`<div class="tbl-wrap tbl-scroll-to-now"><table style="min-width:${STICKY_TOTAL+52*38}px;table-layout:fixed;border-collapse:collapse">
+    rows=`<div class="tbl-wrap tbl-scroll-to-now"><table style="min-width:${STICKY_TOTAL+visibleWeeks().length*38}px;table-layout:fixed;border-collapse:collapse">
       ${stickyColgroup()}
       <thead><tr>
         ${stickyTh(0,'Name')}${stickyTh(1,'Skill')}${stickyTh(2,'Level')}${stickyTh(3,'Country')}${stickyTh(4,'Team')}${stickyTh(5,'Status')}
-        ${WEEKS.map(w=>wkHdr(w)).join('')}
+        ${visibleWeeks().map(w=>wkHdr(w)).join('')}
       </tr></thead><tbody>${people.map(p=>{
       const dn=(r==='Project Manager'&&visibleAssignments().some(a=>a.name===p.name&&!a.committed))?'— Planned resource —':p.name;
       const personA=visibleAssignments().filter(a=>a.name===p.name);
@@ -952,13 +940,13 @@ function renderOverview(){
         ${stickyTd(3,p.country,'padding:9px 12px')}
         ${stickyTd(4,`<span style="cursor:pointer;color:#1D9E75;text-decoration:underline" onclick="event.stopPropagation();openTeam('${p.team}')">${p.team}</span>`,'padding:9px 12px')}
         ${stickyTd(5,statusBadge,'padding:9px 12px')}
-        ${WEEKS.map(w=>wkCell(w,getTotalAlloc(p.name,w))).join('')}
+        ${visibleWeeks().map(w=>wkCell(w,getTotalAlloc(p.name,w))).join('')}
       </tr>`;
     }).join('')}</tbody></table></div>`;
   }
   return `
     <div class="metrics"><div class="metric"><div class="metric-lbl">People</div><div class="metric-val">${allPeople.length}</div></div><div class="metric"><div class="metric-lbl">Assignments</div><div class="metric-val">${state.assignments.length}</div></div><div class="metric"><div class="metric-lbl">Committed</div><div class="metric-val green">${conf}</div></div><div class="metric"><div class="metric-lbl">Planned</div><div class="metric-val" style="color:#b45309">${planned}</div></div></div>
-    <div class="card"><div class="card-hdr"><span class="card-title">📅 Total allocation per person</span><span class="card-sub">${activeFilters>0?`${people.length} of ${allPeople.length} shown`:'All 52 weeks · click a person for details'}</span></div>${filterBar}${rows}</div>`;
+    <div class="card"><div class="card-hdr"><span class="card-title">📅 Total allocation per person</span><div style="display:flex;align-items:center;gap:12px">${weekRangeToggle()}<span class="card-sub">${activeFilters>0?`${people.length} of ${allPeople.length} shown`:`W${CURRENT_WEEK}–W52 · click a person for details`}</span></div></div>${filterBar}${rows}</div>`;
 }
 
 function renderPlanning(){
@@ -1001,10 +989,15 @@ STICKY_COLS.forEach((c,i)=>{ c.left = STICKY_COLS.slice(0,i).reduce((s,x)=>s+x.w
 const STICKY_TOTAL = STICKY_COLS.reduce((s,c)=>s+c.w,0);
 
 // colgroup pins exact widths so header and body always align
+function weekRangeToggle(){
+  return `<button class="btn sm" onclick="state.showAllWeeks=!state.showAllWeeks;render()" style="font-size:11px">
+    ${state.showAllWeeks ? '← Current week' : '⟵ All weeks'}
+  </button>`;
+}
 function stickyColgroup(){
   return '<colgroup>'
     + STICKY_COLS.map(c=>`<col style="width:${c.w}px;min-width:${c.w}px">`).join('')
-    + WEEKS.map(()=>'<col style="width:38px;min-width:36px">').join('')
+    + visibleWeeks().map(()=>'<col style="width:38px;min-width:36px">').join('')
     + '</colgroup>';
 }
 function stickyTh(i, content='', extraStyle=''){

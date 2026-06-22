@@ -110,31 +110,6 @@
   .af { background: rgba(16,185,129,0.12) !important; color: #065f46; }
   .ap { background: rgba(245,158,11,0.12) !important; color: #92400e; }
 
-  /* ── Current week highlight ── */
-  .wk-now-hdr {
-    background: var(--green-bg) !important;
-    color: #0f6e56 !important;
-    position: relative;
-  }
-  .wk-now-hdr::after {
-    content: '';
-    display: block;
-    width: 4px;
-    height: 4px;
-    background: #1D9E75;
-    border-radius: 50%;
-    margin: 2px auto 0;
-  }
-  .wk-now {
-    background: rgba(29,158,117,0.07) !important;
-    outline: 1px solid rgba(29,158,117,0.25);
-    outline-offset: -1px;
-  }
-  /* When a cell has both a status colour and current-week, let status colour win but keep the outline */
-  .ao.wk-now { outline-color: rgba(220,38,38,0.4); }
-  .af.wk-now { outline-color: rgba(16,185,129,0.5); }
-  .ap.wk-now { outline-color: rgba(245,158,11,0.4); }
-
   /* ── Forms ── */
   .sec-title { font-size: 10px; font-weight: 700; color: var(--text3); text-transform: uppercase; letter-spacing: 0.07em; padding-bottom: 10px; border-bottom: 1px solid var(--bg4); margin-bottom: 14px; }
   .fg { display: flex; flex-direction: column; gap: 5px; }

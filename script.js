@@ -1,69 +1,62 @@
-const WEEKS = Array.from({length:52},(_,i)=>i+1);
+// ─────────────────────────────────────────────────────────────────────────────
+// Resource Planner — script.js (clean)
+// ─────────────────────────────────────────────────────────────────────────────
 
-// ── Current week (reliable calculation) ──────────────────────────────────
-const _now = new Date();
-const _startOfYear = new Date(_now.getFullYear(), 0, 1);
-const _dayOfYear = Math.round((_now - _startOfYear) / 86400000);
-const CURRENT_WEEK = Math.min(Math.max(Math.ceil((_dayOfYear + _startOfYear.getDay() + 1) / 7), 1), 52);
-
-// ── Week header/cell helpers ──────────────────────────────────────────────
-function wkHdr(w){
-  return `<th class="wk">W${w}</th>`;
-}
-function wkCell(w, alloc){
-  return `<td class="wk ${wClass(alloc)}">${alloc>0?alloc+'%':'–'}</td>`;
-}
-// Returns the weeks to show in allocation tables
-function visibleWeeks(){ return state.showAllWeeks ? WEEKS : WEEKS.slice(CURRENT_WEEK-1); }
-
-let _debounceTimer = null;
-function debounce(fn, ms){ clearTimeout(_debounceTimer); _debounceTimer = setTimeout(fn, ms); }
-function setFilter(key, val){ state[key]=val; debounce(render, 300); }
-
+// ── Constants ────────────────────────────────────────────────────────────────
+const WEEKS = Array.from({length:52}, (_,i) => i+1);
 const TEAMS = ['Development','Platform','PMO'];
 const TYPES = ['Project','Base Service','Charge On','Internal Initiative'];
 
+const _now = new Date();
+const _soy = new Date(_now.getFullYear(), 0, 1);
+const CURRENT_WEEK = Math.min(Math.max(Math.ceil(
+  (((_now - _soy) / 86400000) + _soy.getDay() + 1) / 7
+), 1), 52);
+
 const DEFAULT_SERVICES = [
-  {name:'Integration Support',team:'Platform'},
-  {name:'Infrastructure Support',team:'Platform'},
-  {name:'Cloud Operations',team:'Platform'},
-  {name:'Application Support',team:'Development'},
-  {name:'Bug Fixing',team:'Development'},
-  {name:'Maintenance',team:'Development'},
-  {name:'PMO Governance',team:'PMO'},
-  {name:'Reporting',team:'PMO'},
+  {name:'Integration Support',   team:'Platform'},
+  {name:'Infrastructure Support', team:'Platform'},
+  {name:'Cloud Operations',       team:'Platform'},
+  {name:'Application Support',    team:'Development'},
+  {name:'Bug Fixing',             team:'Development'},
+  {name:'Maintenance',            team:'Development'},
+  {name:'PMO Governance',         team:'PMO'},
+  {name:'Reporting',              team:'PMO'},
 ];
 
+// ── Persistence ───────────────────────────────────────────────────────────────
 function loadSaved(){
-  try { const raw=localStorage.getItem('rp_data'); if(raw) return JSON.parse(raw); } catch(e){}
+  try { const r=localStorage.getItem('rp_data'); if(r) return JSON.parse(r); } catch(e){}
   return null;
 }
+
 function saveData(){
   try {
     localStorage.setItem('rp_data', JSON.stringify({
-      projects: state.projects,
+      projects:    state.projects,
       assignments: state.assignments,
-      baseServices: state.baseServices,
+      baseServices:state.baseServices,
       teamMembers: state.teamMembers,
-      teamConfig: state.teamConfig,
-      inboxItems: state.inboxItems,
-      userName: document.getElementById('user-name')?.value||'Martina Vallgren',
-      role: document.getElementById('role-sel')?.value||'Teamlead',
+      teamConfig:  state.teamConfig,
+      inboxItems:  state.inboxItems,
+      userName: document.getElementById('user-name')?.value || '',
+      role:     document.getElementById('role-sel')?.value  || 'Teamlead',
     }));
   } catch(e){}
 }
+
 function exportData(){
   const data = localStorage.getItem('rp_data') || JSON.stringify({
-    projects: state.projects, assignments: state.assignments,
-    baseServices: state.baseServices, teamMembers: state.teamMembers,
-    teamConfig: state.teamConfig, inboxItems: state.inboxItems
+    projects:state.projects, assignments:state.assignments,
+    baseServices:state.baseServices, teamMembers:state.teamMembers,
+    teamConfig:state.teamConfig, inboxItems:state.inboxItems,
   });
-  const blob = new Blob([data], {type:'application/json'});
   const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
+  a.href = URL.createObjectURL(new Blob([data], {type:'application/json'}));
   a.download = 'ResourcePlanner_backup_' + new Date().toISOString().split('T')[0] + '.json';
   a.click();
 }
+
 function importData(){
   const input = document.createElement('input');
   input.type = 'file'; input.accept = '.json';
@@ -76,157 +69,802 @@ function importData(){
         localStorage.setItem('rp_data', JSON.stringify(data));
         alert('Data imported! The page will now reload.');
         location.reload();
-      } catch(err) { alert('Could not read file. Make sure it is a valid backup file.'); }
+      } catch(err) { alert('Could not read file. Make sure it is a valid backup.'); }
     };
     reader.readAsText(file);
   };
   input.click();
 }
+
 function clearData(){
   if(!confirm('Clear all data? This cannot be undone.')) return;
   localStorage.removeItem('rp_data'); location.reload();
 }
 
+// ── State ─────────────────────────────────────────────────────────────────────
 const saved = loadSaved();
 
 let state = {
+  // Navigation
   tab: 'dashboard',
-  projects: saved?.projects || [],
-  assignments: saved?.assignments || [],
+  selectedProject: null,
+  selectedTeam: null,
+  selectedPerson: null,
+
+  // Data
+  projects:     saved?.projects     || [],
+  assignments:  saved?.assignments  || [],
   baseServices: saved?.baseServices || DEFAULT_SERVICES,
+  teamMembers:  saved?.teamMembers  || [],
+  teamConfig:   saved?.teamConfig   || {
+    Development: {teamlead:'', manager:''},
+    Platform:    {teamlead:'', manager:''},
+    PMO:         {teamlead:'', manager:''},
+  },
+  inboxItems: saved?.inboxItems || [],
+
+  // Add-assignment form
   addType: 'Project',
   aName:'', aTeam:'Development', aCountry:'Sweden', aSkill:'', aLevel:'Junior',
   aProjId:'', aService:'', aWork:'', aStart:1, aEnd:3, aPct:80,
+
+  // Add-project form
   pName:'', pPm:'', pStart:'', pEnd:'', pDesc:'',
+
+  // Add-service form
   sName:'', sTeam:'Development', sTargetPct:0,
-  msg: null,
-  selectedProject: null, selectedTeam: null,
-  prName:'', prTeam:'Development', prCountry:'Sweden', prSkill:'', prLevel:'Junior', prStart:1, prEnd:4, prPct:80,
-  teamMembers: saved?.teamMembers || [],
-  teamConfig: saved?.teamConfig || {
-    Development: { teamlead: '', manager: '' },
-    Platform:    { teamlead: '', manager: '' },
-    PMO:         { teamlead: '', manager: '' },
-  },
-  tmName:'', tmCountry:'Sweden', tmSkill:'', tmLevel:'Junior', tmTeamlead:'', tmManager:'',
-  inboxItems: saved?.inboxItems || [],
-  iTitle:'', iDesc:'', iPriority:'Medium',
+
+  // Add-resource-to-project form
+  prName:'', prTeam:'Development', prCountry:'Sweden',
+  prSkill:'', prLevel:'Junior', prStart:1, prEnd:4, prPct:80,
+
+  // Add-team-member form
+  tmName:'', tmCountry:'Sweden', tmSkill:'', tmLevel:'Junior',
+  tmTeamlead:'', tmManager:'',
+
+  // Edit-member form
   editingMemberId: null,
-  emName:'', emCountry:'Sweden', emSkill:'', emLevel:'Junior', emTeamlead:'', emManager:'',
+  emName:'', emCountry:'Sweden', emSkill:'', emLevel:'Junior',
+  emTeamlead:'', emManager:'',
+
+  // Inbox form
+  iTitle:'', iDesc:'', iPriority:'Medium',
+
+  // Filters (overview)
   fTeam:'', fSkill:'', fLevel:'', fName:'', fAssignment:'', fStatus:'',
+
+  // UI toggles
   dashAllocRange: 8,
-  selectedPerson: null,
   showAllWeeks: false,
+
+  // Flash message
+  msg: null,
 };
 
-function role(){ return document.getElementById('role-sel').value; }
+// ── Role / permission helpers ─────────────────────────────────────────────────
+function role()    { return document.getElementById('role-sel').value; }
 function userName(){ return document.getElementById('user-name').value; }
-function canEdit(){ return role()==='Teamlead'||role()==='Manager'; }
-function canPlan(){ return role()==='Teamlead'||role()==='Manager'||role()==='Project Manager'; }
-function pmProjects(){ return state.projects.filter(p=>isPmProject(p)); }
+function canEdit() { return role()==='Teamlead' || role()==='Manager'; }
+function canPlan() { return role()==='Teamlead' || role()==='Manager' || role()==='Project Manager'; }
+function pmProjects(){ return state.projects.filter(p => isPmProject(p)); }
+function isPmProject(proj){
+  return proj.projectManager &&
+         proj.projectManager.trim().toLowerCase() === userName().trim().toLowerCase();
+}
 
+// ── Data helpers ──────────────────────────────────────────────────────────────
 function visibleAssignments(){
-  const r=role(), un=userName().trim().toLowerCase();
-  return state.assignments.filter(a=>{
-    if(r==='Team Member') return a.committed && a.name.trim().toLowerCase()===un;
+  const r = role(), un = userName().trim().toLowerCase();
+  return state.assignments.filter(a => {
+    if(r === 'Team Member') return a.committed && a.name.trim().toLowerCase() === un;
     return true;
   });
 }
+
 function getPeople(){
-  const map=new Map();
-  visibleAssignments().forEach(a=>{ if(!map.has(a.name.toLowerCase())) map.set(a.name.toLowerCase(),a); });
+  const map = new Map();
+  visibleAssignments().forEach(a => {
+    if(!map.has(a.name.toLowerCase())) map.set(a.name.toLowerCase(), a);
+  });
   return [...map.values()];
 }
-function getAlloc(a,w){
-  return a.periods.filter(p=>w>=p.startWeek&&w<=p.endWeek).reduce((s,p)=>s+p.allocationPercent,0);
-}
-function getTotalAlloc(name,w){
-  return visibleAssignments().filter(a=>a.name.toLowerCase()===name.toLowerCase()).reduce((s,a)=>s+getAlloc(a,w),0);
-}
-function wClass(t){ return t>100?'ao':t===100?'af':t>0?'ap':''; }
-function cBg(c){ return c==='Sweden'?'#dbeafe':'#fef3c7'; }
 
-function calcTeamAllocForWeek(teamMembers,team,w){
-  const members=teamMembers[team]||[];
-  if(!members.length) return {avg:0,fullyBooked:0,free:0,over:0,total:0};
-  const allocs=members.map(name=>state.assignments.filter(a=>a.name===name).reduce((s,a)=>s+getAlloc(a,w),0));
+function getAlloc(a, w){
+  return a.periods
+    .filter(p => w >= p.startWeek && w <= p.endWeek)
+    .reduce((s, p) => s + p.allocationPercent, 0);
+}
+
+function getTotalAlloc(name, w){
+  return visibleAssignments()
+    .filter(a => a.name.toLowerCase() === name.toLowerCase())
+    .reduce((s, a) => s + getAlloc(a, w), 0);
+}
+
+function getTeamlead(name){
+  const m = state.teamMembers.find(m => m.name === name);
+  if(m && m.teamlead) return m.teamlead;
+  const team = m?.team || state.assignments.find(a => a.name === name)?.team;
+  return team && state.teamConfig[team] ? state.teamConfig[team].teamlead : '';
+}
+
+function getManager(name){
+  const m = state.teamMembers.find(m => m.name === name);
+  if(m && m.manager) return m.manager;
+  const team = m?.team || state.assignments.find(a => a.name === name)?.team;
+  return team && state.teamConfig[team] ? state.teamConfig[team].manager : '';
+}
+
+function getAllPeople(){
+  const map = new Map();
+  state.teamMembers.forEach(m =>
+    map.set(m.name.trim().toLowerCase(), {name:m.name, team:m.team, country:m.country, skillset:m.skillset, level:m.level})
+  );
+  state.assignments.forEach(a => {
+    const key = a.name.trim().toLowerCase();
+    if(!map.has(key)) map.set(key, {name:a.name, team:a.team, country:a.country, skillset:a.skillset, level:a.level});
+  });
+  return [...map.values()].sort((a,b) => a.name.localeCompare(b.name));
+}
+
+// ── Technical debt helpers ────────────────────────────────────────────────────
+function getSvcAlloc(svcName, w){
+  return state.assignments
+    .filter(a => a.type === 'Base Service' && a.workName === svcName)
+    .reduce((s, a) => s + getAlloc(a, w), 0);
+}
+
+function calcSvcDebt(svc){
+  const target = svc.targetPct || 0;
+  if(!target) return {debtPct:0, debtWeeks:0};
+  let debtPct = 0;
+  for(let w = 1; w < CURRENT_WEEK; w++){
+    debtPct += Math.max(0, target - getSvcAlloc(svc.name, w));
+  }
   return {
-    avg:Math.round(allocs.reduce((s,v)=>s+v,0)/members.length),
-    fullyBooked:allocs.filter(v=>v>=100).length,
-    free:allocs.filter(v=>v===0).length,
-    over:allocs.filter(v=>v>100).length,
-    total:members.length,
+    debtPct:   Math.round(debtPct),
+    debtWeeks: Math.round((debtPct / 100) * 10) / 10,
   };
 }
 
-function buildTeamAllocCard(teamMembers,allocWeeks,cw,state){
-  const rangeOpts=[4,8,12,26,52].map(n=>{
-    const active=state.dashAllocRange===n;
-    return '<button onclick="state.dashAllocRange='+n+';render()" style="padding:5px 14px;font-size:12px;font-weight:600;border-radius:20px;border:1px solid '+(active?'#1D9E75':'#e5e7eb')+';background:'+(active?'#1D9E75':'#fff')+';color:'+(active?'#fff':'#6b7280')+';cursor:pointer;font-family:inherit;transition:all .1s">'+n+'W</button>';
-  }).join('');
-  const wHeaders=allocWeeks.map(w=>{
-    const isNow=w===cw;
-    return '<th style="padding:8px 4px;text-align:center;min-width:58px;'+(isNow?'background:var(--green-bg);':'')+'"><div style="font-size:10px;font-weight:700;color:'+(isNow?'#0f6e56':'#9ca3af')+';font-family:DM Mono,monospace">W'+w+'</div>'+(isNow?'<div style="width:4px;height:4px;background:#1D9E75;border-radius:50%;margin:2px auto 0"></div>':'')+'</th>';
-  }).join('');
-  const teamRows=['Development','Platform','PMO'].map(function(team,ti){
-    const icon=team==='Development'?'💻':team==='Platform'?'☁':'📊';
-    const memberCount=teamMembers[team].length;
-    const nowAlloc=calcTeamAllocForWeek(teamMembers,team,cw);
-    const bigPct=nowAlloc.avg;
-    const bigColor=memberCount===0?'#d1d5db':bigPct>100?'#b91c1c':bigPct>=80?'#0f6e56':bigPct>=50?'#b45309':'#185fa5';
-    let weekCells='';
-    if(memberCount===0){
-      weekCells='<td colspan="'+allocWeeks.length+'" style="padding:16px 24px;vertical-align:middle"><div style="display:flex;align-items:center;gap:10px"><div style="flex:1;height:8px;background:#f3f4f6;border-radius:4px"></div><span style="font-size:12px;color:#d1d5db;font-style:italic">No members yet</span></div></td>';
-    } else {
-      weekCells=allocWeeks.map(function(w){
-        const ta=calcTeamAllocForWeek(teamMembers,team,w);
-        const isNow=w===cw;
-        const barH=Math.min(Math.round((ta.avg/100)*52),52);
-        const barColor=ta.avg>100?'#fca5a5':ta.avg>=80?'#6ee7b7':ta.avg>=50?'#fcd34d':ta.avg>0?'#93c5fd':'#e5e7eb';
-        const textColor=ta.avg>100?'#b91c1c':ta.avg>=80?'#065f46':ta.avg>=50?'#92400e':ta.avg>0?'#1e40af':'#d1d5db';
-        return '<td style="padding:8px 4px;text-align:center;vertical-align:bottom;'+(isNow?'background:var(--green-bg);':'')+'border-bottom:1px solid #f3f4f6"><div style="display:flex;flex-direction:column;align-items:center;gap:3px">'+(ta.over?'<div style="font-size:9px;color:#b91c1c;font-weight:700">+'+ta.over+'</div>':'<div style="font-size:9px;color:transparent">·</div>')+'<div style="font-size:12px;font-weight:700;color:'+textColor+';font-family:DM Mono,monospace;line-height:1">'+(ta.avg>0?ta.avg+'%':'–')+'</div><div style="width:32px;height:52px;background:#f3f4f6;border-radius:4px;overflow:hidden;display:flex;align-items:flex-end"><div style="width:100%;height:'+barH+'px;background:'+barColor+';border-radius:4px"></div></div></div></td>';
-      }).join('');
-    }
-    const statusPills=(nowAlloc.fullyBooked?'<span style="font-size:10px;font-weight:700;color:#065f46;background:#d1fae5;padding:1px 6px;border-radius:20px">'+nowAlloc.fullyBooked+' full</span>':'')+(nowAlloc.free?'<span style="font-size:10px;font-weight:700;color:#185fa5;background:#dbeafe;padding:1px 6px;border-radius:20px;margin-left:4px">'+nowAlloc.free+' free</span>':'')+(nowAlloc.over?'<span style="font-size:10px;font-weight:700;color:#b91c1c;background:#fef2f2;padding:1px 6px;border-radius:20px;margin-left:4px">'+nowAlloc.over+' over</span>':'')+(memberCount===0?'<span style="font-size:10px;color:#d1d5db;font-style:italic">no members yet</span>':'');
-    return '<tr style="border-bottom:'+(ti<2?'2px solid #e5e7eb':'1px solid #f3f4f6')+'"><td style="padding:14px 24px;vertical-align:middle;min-width:220px"><div style="display:flex;align-items:center;gap:12px"><div style="width:44px;height:44px;border-radius:12px;background:var(--green-bg);display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0">'+icon+'</div><div style="flex:1;min-width:0"><div style="font-size:14px;font-weight:700;color:#111827">'+team+'</div><div style="font-size:12px;color:#6b7280;margin-top:2px">'+memberCount+' member'+(memberCount!==1?'s':'')+'</div><div style="display:flex;gap:6px;margin-top:4px;flex-wrap:wrap">'+statusPills+'</div></div><div style="text-align:right;flex-shrink:0"><div style="font-size:28px;font-weight:700;color:'+bigColor+';font-family:DM Mono,monospace;line-height:1">'+(memberCount===0?'—':bigPct+'%')+'</div><div style="font-size:10px;color:#9ca3af;margin-top:2px">now</div></div></div></td>'+weekCells+'</tr>';
-  }).join('');
-  return '<div class="card"><div class="card-hdr" style="padding:16px 24px"><div><span class="card-title" style="font-size:15px">📊 Team allocation</span><div style="font-size:12px;color:#9ca3af;margin-top:2px">Average allocation % per team · '+allocWeeks.length+' weeks shown</div></div><div style="display:flex;gap:6px;align-items:center">'+rangeOpts+'</div></div><div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;min-width:'+(180+allocWeeks.length*62)+'px"><thead><tr style="border-bottom:2px solid #e5e7eb"><th style="padding:10px 24px;text-align:left;font-size:11px;font-weight:700;color:#9ca3af;text-transform:uppercase;letter-spacing:.05em;min-width:180px">Team</th>'+wHeaders+'</tr></thead><tbody>'+teamRows+'</tbody></table></div><div style="padding:12px 24px;border-top:1px solid #f3f4f6;display:flex;gap:20px;font-size:11px;color:#6b7280;flex-wrap:wrap;align-items:center"><span style="font-weight:600;color:#9ca3af;text-transform:uppercase;letter-spacing:.05em;font-size:10px">Legend</span><span style="display:flex;align-items:center;gap:5px"><span style="width:12px;height:12px;border-radius:3px;background:#93c5fd;display:inline-block"></span>Low &lt;50%</span><span style="display:flex;align-items:center;gap:5px"><span style="width:12px;height:12px;border-radius:3px;background:#fcd34d;display:inline-block"></span>Medium 50–79%</span><span style="display:flex;align-items:center;gap:5px"><span style="width:12px;height:12px;border-radius:3px;background:#6ee7b7;display:inline-block"></span>High 80–100%</span><span style="display:flex;align-items:center;gap:5px"><span style="width:12px;height:12px;border-radius:3px;background:#fca5a5;display:inline-block"></span>Overbooked</span><span style="display:flex;align-items:center;gap:5px"><span style="width:4px;height:4px;border-radius:50%;background:#1D9E75;display:inline-block"></span>Current week</span></div></div>';
+function calcTeamDebt(team){
+  const svcs = state.baseServices.filter(s => s.team === team && s.targetPct > 0);
+  if(!svcs.length) return {debtPct:0, debtWeeks:0, svcs:[]};
+  let total = 0;
+  const details = svcs.map(s => { const d = calcSvcDebt(s); total += d.debtPct; return {name:s.name, target:s.targetPct, ...d}; });
+  return {debtPct:Math.round(total), debtWeeks:Math.round((total/100)*10)/10, svcs:details};
 }
 
+function setSvcTarget(name, val){
+  state.baseServices = state.baseServices.map(s =>
+    s.name === name ? {...s, targetPct: Math.max(0, Math.min(200, +val||0))} : s
+  );
+  saveData(); render();
+}
+
+// ── Team allocation helpers ───────────────────────────────────────────────────
+function calcTeamAllocForWeek(teamMemberMap, team, w){
+  const members = teamMemberMap[team] || [];
+  if(!members.length) return {avg:0, fullyBooked:0, free:0, over:0, total:0};
+  const allocs = members.map(name =>
+    state.assignments.filter(a => a.name === name).reduce((s,a) => s + getAlloc(a,w), 0)
+  );
+  return {
+    avg:         Math.round(allocs.reduce((s,v) => s+v, 0) / members.length),
+    fullyBooked: allocs.filter(v => v >= 100).length,
+    free:        allocs.filter(v => v === 0).length,
+    over:        allocs.filter(v => v > 100).length,
+    total:       members.length,
+  };
+}
+
+function buildTeamMemberMap(){
+  const map = {Development:[], Platform:[], PMO:[]};
+  const norm = t => {
+    if(!t) return null;
+    const s = t.trim().toLowerCase();
+    return s==='development'?'Development': s==='platform'?'Platform': s==='pmo'?'PMO': null;
+  };
+  state.teamMembers.forEach(m => { const t=norm(m.team); if(t && !map[t].includes(m.name)) map[t].push(m.name); });
+  state.assignments.forEach(a => { const t=norm(a.team);  if(t && !map[t].includes(a.name)) map[t].push(a.name); });
+  return map;
+}
+
+
+// ── UI helpers ────────────────────────────────────────────────────────────────
+let _debounceTimer = null;
+function debounce(fn, ms){ clearTimeout(_debounceTimer); _debounceTimer = setTimeout(fn, ms); }
+function setFilter(key, val){ state[key] = val; debounce(render, 300); }
+
+function wClass(t){ return t>100?'ao': t===100?'af': t>0?'ap': ''; }
+function cBg(c)   { return c==='Sweden'?'#dbeafe':'#fef3c7'; }
+
+function visibleWeeks(){ return state.showAllWeeks ? WEEKS : WEEKS.slice(CURRENT_WEEK-1); }
+
+function wkHdr(w){ return `<th class="wk">W${w}</th>`; }
+function wkCell(w, alloc){
+  return `<td class="wk ${wClass(alloc)}">${alloc>0 ? alloc+'%' : '–'}</td>`;
+}
+
+function weekRangeToggle(){
+  return `<button class="btn sm" onclick="state.showAllWeeks=!state.showAllWeeks;render()" style="font-size:11px">
+    ${state.showAllWeeks ? '← Current week' : '⟵ All weeks'}
+  </button>`;
+}
+
+function flashMsg(text, ok){
+  state.msg = {text, ok};
+  render();
+  setTimeout(() => { state.msg = null; render(); }, 3000);
+}
+
+function fmtDate(d){
+  if(!d) return '—';
+  return new Date(d).toLocaleDateString('en-SE', {day:'2-digit', month:'short'});
+}
+
+function fmtDateLong(d){
+  if(!d) return '—';
+  return new Date(d).toLocaleDateString('en-SE', {day:'2-digit', month:'short', year:'numeric'});
+}
+
+function badge(label, bg, color){
+  return `<span style="background:${bg};color:${color};padding:1px 8px;border-radius:20px;font-size:11px;font-weight:700">${label}</span>`;
+}
+
+function peopleSelect(id, value, onchangeCode, extraStyle, placeholder){
+  const ph = placeholder || 'Type or select person…';
+  setTimeout(() => { const el=document.getElementById(id); if(el && document.activeElement!==el) el.value=value||''; }, 0);
+  return `<input class="sel" id="${id}" list="people-list" placeholder="${ph}"
+    style="${extraStyle||''}" autocomplete="off"
+    oninput="${onchangeCode}" onblur="render()" />`;
+}
+
+function peopleSelectOptional(id, value, onchangeCode, extraStyle){
+  setTimeout(() => { const el=document.getElementById(id); if(el && document.activeElement!==el) el.value=value||''; }, 0);
+  return `<input class="sel" id="${id}" list="people-list-optional" placeholder="Type name or leave blank…"
+    style="${extraStyle||''}" autocomplete="off"
+    oninput="${onchangeCode}" onblur="debounce(render,200)" />`;
+}
+
+function buildDatalist(){
+  const people = getAllPeople();
+  const opts = people.map(p => `<option value="${p.name}">${p.skillset} · ${p.team}</option>`).join('');
+  ['people-list','people-list-optional'].forEach(id => {
+    let dl = document.getElementById(id);
+    if(!dl){ dl = document.createElement('datalist'); dl.id = id; document.body.appendChild(dl); }
+    dl.innerHTML = opts;
+  });
+}
+
+function updateSidebarForRole(){
+  const el = document.getElementById('sidebar-teams-section');
+  if(el) el.style.display = role()==='Team Member' ? 'none' : '';
+}
+
+function toggleDark(){
+  const isDark = document.body.classList.toggle('dark');
+  localStorage.setItem('rp_dark', isDark ? '1' : '0');
+  document.getElementById('dark-btn').textContent = isDark ? '☀ Light' : '🌙 Dark';
+}
+(function(){ if(localStorage.getItem('rp_dark')==='1') document.body.classList.add('dark'); })();
+
+function onPersonInput(val, target){
+  if(target==='add')     state.aName  = val;
+  else if(target==='tm') state.tmName = val;
+  else if(target==='pr') state.prName = val;
+  const match = getAllPeople().find(p => p.name.trim().toLowerCase() === val.trim().toLowerCase());
+  if(match){
+    if(target==='add'){
+      Object.assign(state, {aName:match.name, aTeam:match.team, aCountry:match.country, aSkill:match.skillset, aLevel:match.level});
+      clearTimeout(_debounceTimer); render();
+    } else if(target==='tm'){
+      Object.assign(state, {tmName:match.name, tmCountry:match.country, tmSkill:match.skillset, tmLevel:match.level});
+    } else if(target==='pr'){
+      Object.assign(state, {prName:match.name, prTeam:match.team, prCountry:match.country, prSkill:match.skillset, prLevel:match.level});
+      clearTimeout(_debounceTimer); render();
+    }
+  } else if(target==='add'){
+    debounce(render, 600);
+  }
+}
+
+// ── Navigation ────────────────────────────────────────────────────────────────
+const TAB_NAMES = {
+  dashboard:'Dashboard', overview:'Overview', 'person-detail':'Person Detail',
+  projects:'Projects', 'project-detail':'Project Detail', services:'Base Services',
+  'team-detail':'Team Detail', inbox:'Inbox', pipeline:'Pipeline', add:'Planning mode',
+};
+
+function setTab(t){
+  state.tab = t;
+  document.querySelectorAll('.nav-item').forEach(el => {
+    el.classList.toggle('active', el.textContent.trim().replace(/^./,'').trim() === TAB_NAMES[t]);
+  });
+  document.getElementById('tab-title').textContent = TAB_NAMES[t];
+  render();
+}
+
+function openPersonDetail(name){
+  if(role()==='Team Member' && name.trim().toLowerCase()!==userName().trim().toLowerCase()) return;
+  state.selectedPerson = name;
+  state.tab = 'person-detail';
+  document.getElementById('tab-title').textContent = name;
+  document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+  render();
+}
+
+function openProject(projId){
+  state.selectedProject = projId;
+  state.tab = 'project-detail';
+  document.getElementById('tab-title').textContent = 'Project Detail';
+  document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+  render();
+}
+
+function openTeam(teamName){
+  if(role()==='Team Member') return;
+  state.selectedTeam = teamName;
+  state.tab = 'team-detail';
+  document.getElementById('tab-title').textContent = teamName + ' Team';
+  document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+  const idMap = {Development:'nav-dev', Platform:'nav-plat', PMO:'nav-pmo'};
+  if(idMap[teamName]) document.getElementById(idMap[teamName])?.classList.add('active');
+  render();
+}
+
+
+// ── Actions ───────────────────────────────────────────────────────────────────
+function commitA(ai){
+  const a = state.assignments[ai];
+  a.committed = true; a.committedBy = userName();
+  a.confirmed = true; a.confirmedBy = userName();
+  render();
+}
+function uncommitA(ai){
+  const a = state.assignments[ai];
+  a.committed = false; a.committedBy = null;
+  a.confirmed = false; a.confirmedBy = null;
+  render();
+}
+function delAssignment(ai){ state.assignments.splice(ai, 1); render(); }
+function delPeriod(ai, pi){
+  state.assignments[ai].periods.splice(pi, 1);
+  state.assignments[ai].committed = false; state.assignments[ai].committedBy = null;
+  state.assignments[ai].confirmed = false; state.assignments[ai].confirmedBy = null;
+  render();
+}
+function addPeriod(ai){
+  state.assignments[ai].periods.push({id:Date.now(), startWeek:state.aStart, endWeek:state.aEnd, allocationPercent:state.aPct});
+  state.assignments[ai].committed = false; state.assignments[ai].committedBy = null;
+  render();
+}
+
+function addProject(){
+  if(!state.pName.trim()) return;
+  state.projects.push({id:Date.now(), name:state.pName.trim(), projectManager:state.pPm.trim(),
+    startDate:state.pStart, endDate:state.pEnd, description:state.pDesc.trim()});
+  state.pName=''; state.pPm=''; state.pStart=''; state.pEnd=''; state.pDesc='';
+  render();
+}
+function deleteProject(id){
+  if(!confirm('Delete this project? Planning entries linked to it will not be deleted.')) return;
+  state.projects = state.projects.filter(p => p.id !== id); render();
+}
+function saveProjectEdits(id){
+  const name  = document.getElementById('ep-name')?.value.trim();
+  const pm    = document.getElementById('ep-pm')?.value || '';
+  const start = document.getElementById('ep-start')?.value;
+  const end   = document.getElementById('ep-end')?.value;
+  const desc  = document.getElementById('ep-desc')?.value.trim();
+  if(!name) return;
+  const old = state.projects.find(p => p.id===id);
+  if(old && old.name !== name)
+    state.assignments.forEach(a => { if(a.workName===old.name && a.type==='Project') a.workName=name; });
+  state.projects = state.projects.map(p => p.id===id ? {...p,name,projectManager:pm,startDate:start,endDate:end,description:desc} : p);
+  flashMsg('Project updated!', true);
+}
+function toggleEditProject(){
+  const el = document.getElementById('edit-proj-panel');
+  if(el) el.style.display = el.style.display==='none' ? 'block' : 'none';
+}
+
+function addResourceToProject(){
+  const proj = state.projects.find(p => p.id === state.selectedProject);
+  if(!proj) return;
+  if(!state.prName.trim() || !state.prSkill.trim()){ flashMsg('Please fill in name and skillset.', false); return; }
+  const period = {id:Date.now(), startWeek:state.prStart, endWeek:state.prEnd, allocationPercent:state.prPct};
+  const ei = state.assignments.findIndex(a =>
+    a.name.trim().toLowerCase()===state.prName.trim().toLowerCase() && a.type==='Project' && a.workName===proj.name
+  );
+  if(ei >= 0){
+    state.assignments[ei].periods.push(period);
+    state.assignments[ei].committed = false; state.assignments[ei].committedBy = null;
+  } else {
+    state.assignments.push({id:Date.now(), name:state.prName.trim(), team:state.prTeam,
+      country:state.prCountry, skillset:state.prSkill.trim(), level:state.prLevel,
+      type:'Project', workName:proj.name, projectId:proj.id,
+      periods:[period], confirmed:false, confirmedBy:null, committed:false, committedBy:null});
+  }
+  state.prName=''; state.prSkill=''; state.prStart=1; state.prEnd=4; state.prPct=80;
+  flashMsg('Resource added!', true);
+}
+
+function addSvc(){
+  if(!state.sName.trim()) return;
+  state.baseServices.push({name:state.sName.trim(), team:state.sTeam, targetPct:state.sTargetPct||0});
+  state.sName=''; state.sTargetPct=0; render();
+}
+function editSvc(name){
+  const n = prompt('New name:', name); if(!n?.trim()) return;
+  state.baseServices = state.baseServices.map(s => s.name===name ? {...s, name:n.trim()} : s); render();
+}
+function delSvc(name){ state.baseServices = state.baseServices.filter(s => s.name!==name); render(); }
+
+function addTeamMember(){
+  const nameEl  = document.getElementById('inp-tmName');
+  const skillEl = document.getElementById('inp-tmSkill');
+  const tlEl    = document.getElementById('inp-tmTl');
+  const mgrEl   = document.getElementById('inp-tmMgr');
+  if(nameEl?.value.trim())  state.tmName     = nameEl.value.trim();
+  if(skillEl?.value.trim()) state.tmSkill    = skillEl.value.trim();
+  if(tlEl?.value.trim())    state.tmTeamlead = tlEl.value.trim();
+  if(mgrEl?.value.trim())   state.tmManager  = mgrEl.value.trim();
+  if(!state.tmName.trim() || !state.tmSkill.trim()) return;
+  const teamName = state.selectedTeam;
+  if(state.teamMembers.find(m => m.name.trim().toLowerCase()===state.tmName.trim().toLowerCase() && m.team===teamName)){
+    flashMsg('This person is already in the team.', false); return;
+  }
+  state.teamMembers.push({id:Date.now(), name:state.tmName.trim(), team:teamName,
+    country:state.tmCountry, skillset:state.tmSkill.trim(), level:state.tmLevel,
+    teamlead:state.tmTeamlead.trim(), manager:state.tmManager.trim()});
+  state.tmName=''; state.tmSkill=''; state.tmTeamlead=''; state.tmManager='';
+  render();
+}
+function removeTeamMember(id){ state.teamMembers = state.teamMembers.filter(m => m.id!==id); render(); }
+
+function startEditMember(id){
+  if(!canEdit()) return;
+  if(state.editingMemberId===id){ state.editingMemberId=null; render(); return; }
+  const m = state.teamMembers.find(m => m.id===id); if(!m) return;
+  state.editingMemberId = id;
+  state.emName = m.name; state.emCountry = m.country; state.emSkill = m.skillset;
+  state.emLevel = m.level; state.emTeamlead = m.teamlead||''; state.emManager = m.manager||'';
+  render();
+}
+function saveMemberEditFromInputs(id){
+  const nv = document.getElementById('em-name-'+id)?.value.trim()  || state.emName.trim();
+  const sv = document.getElementById('em-skill-'+id)?.value.trim() || state.emSkill.trim();
+  const tv = document.getElementById('em-tl-'+id)?.value.trim()    || '';
+  const mv = document.getElementById('em-mgr-'+id)?.value.trim()   || '';
+  if(!nv) return;
+  const old = state.teamMembers.find(m => m.id===id);
+  const oldName = (old?.name||'').trim().toLowerCase();
+  state.teamMembers = state.teamMembers.map(m =>
+    m.id===id ? {...m, name:nv, country:state.emCountry, skillset:sv, level:state.emLevel, teamlead:tv, manager:mv} : m
+  );
+  state.assignments = state.assignments.map(a => {
+    if(a.name.trim().toLowerCase()===oldName)
+      return {...a, name:nv, country:state.emCountry||a.country, skillset:sv||a.skillset, level:state.emLevel||a.level};
+    return a;
+  });
+  state.editingMemberId = null;
+  flashMsg('Member updated!', true);
+}
+function saveTeamConfig(team, field, value){
+  if(!state.teamConfig[team]) state.teamConfig[team] = {teamlead:'', manager:''};
+  state.teamConfig[team][field] = value;
+}
+
+function addAssignment(){
+  if(!canPlan()){ flashMsg('You do not have permission to add planning.', false); return; }
+  const isPM = role()==='Project Manager';
+  if(!isPM && !state.aName.trim()){ flashMsg('Please fill in the name.', false); return; }
+  if(!state.aSkill.trim()){ flashMsg('Please fill in the skillset.', false); return; }
+  if(state.addType==='Project' && !state.aProjId){ flashMsg('Please select a project.', false); return; }
+  if(state.addType==='Base Service' && !state.aService){ flashMsg('Please select a base service.', false); return; }
+  if((state.addType==='Charge On'||state.addType==='Internal Initiative') && !state.aWork.trim()){ flashMsg('Please enter a work name.', false); return; }
+  let wn = '';
+  if(state.addType==='Project'){ const p=state.projects.find(p=>p.id==state.aProjId); wn=p?p.name:''; }
+  else if(state.addType==='Base Service') wn = state.aService;
+  else wn = state.aWork;
+  const period = {id:Date.now(), startWeek:state.aStart, endWeek:state.aEnd, allocationPercent:state.aPct};
+  const ei = state.assignments.findIndex(a =>
+    a.name.trim().toLowerCase()===state.aName.trim().toLowerCase() &&
+    a.type===state.addType && a.workName.trim().toLowerCase()===wn.trim().toLowerCase()
+  );
+  if(ei >= 0){
+    state.assignments[ei].periods.push(period);
+    state.assignments[ei].committed = false; state.assignments[ei].committedBy = null;
+  } else {
+    const assignName = isPM ? ('__pm_planned__'+Date.now()) : state.aName.trim();
+    state.assignments.push({id:Date.now(), name:assignName, team:state.aTeam, country:state.aCountry,
+      skillset:state.aSkill.trim(), level:state.aLevel, type:state.addType, workName:wn,
+      projectId:state.addType==='Project'?+state.aProjId:null,
+      periods:[period], confirmed:false, confirmedBy:null, committed:false, committedBy:null, pmPlanned:isPM});
+  }
+  flashMsg('Entry added!', true);
+  state.aName=''; state.aSkill=''; state.aProjId=''; state.aService=''; state.aWork='';
+  state.aStart=1; state.aEnd=3; state.aPct=80;
+}
+
+function addInboxItem(){
+  if(!state.iTitle.trim()) return;
+  state.inboxItems.push({id:Date.now(), title:state.iTitle.trim(), description:state.iDesc.trim(),
+    priority:state.iPriority, status:'new', createdBy:userName(),
+    createdAt:new Date().toLocaleDateString('en-SE'), convertedTo:null});
+  state.iTitle=''; state.iDesc=''; state.iPriority='Medium'; render();
+}
+function deleteInboxItem(id){ state.inboxItems = state.inboxItems.filter(i => i.id!==id); render(); }
+function convertInboxItem(id, to){
+  const item = state.inboxItems.find(i => i.id===id); if(!item) return;
+  if(to==='revert'){
+    if(item.convertedTo==='Project'){
+      const proj = state.projects.find(p => p.name===item.title);
+      if(proj && confirm('This will also delete the project "'+item.title+'". Continue?'))
+        state.projects = state.projects.filter(p => p.name!==item.title);
+      else if(!proj){} else return;
+    }
+    item.status='new'; item.convertedTo=null; flashMsg('Reverted to inbox.', true); render(); return;
+  }
+  if(to==='project'){
+    if(item.convertedTo==='Internal Initiative')
+      state.projects.push({id:Date.now(), name:item.title, projectManager:'', startDate:'', endDate:'', description:item.description});
+    else {
+      state.projects.push({id:Date.now(), name:item.title, projectManager:'', startDate:'', endDate:'', description:item.description});
+      item.status='converted';
+    }
+    item.convertedTo='Project'; flashMsg('Converted to project!', true);
+  } else if(to==='initiative'){
+    if(item.convertedTo==='Project'){
+      const proj = state.projects.find(p => p.name===item.title);
+      if(proj) state.projects = state.projects.filter(p => p.name!==item.title);
+    }
+    item.status='converted'; item.convertedTo='Internal Initiative'; flashMsg('Changed to Internal Initiative!', true);
+  }
+  render();
+}
+
+function autoRegisterTeamMembers(){
+  state.assignments.forEach(a => {
+    if(!a.name || !a.team) return;
+    const key = a.name.trim().toLowerCase(), team = a.team.trim();
+    if(!state.teamMembers.some(m => m.name.trim().toLowerCase()===key && m.team===team))
+      state.teamMembers.push({id:Date.now()+Math.random(), name:a.name.trim(), team,
+        country:a.country||'Sweden', skillset:a.skillset||'', level:a.level||'Junior'});
+  });
+}
+
+
+// ── render() + tab router ─────────────────────────────────────────────────────
+function render(){
+  buildDatalist();
+  updateSidebarForRole();
+  const darkBtn = document.getElementById('dark-btn');
+  if(darkBtn) darkBtn.textContent = document.body.classList.contains('dark') ? '☀ Light' : '🌙 Dark';
+  document.getElementById('foot').textContent =
+    `${state.assignments.length} assignment${state.assignments.length!==1?'s':''} · ${state.projects.length} project${state.projects.length!==1?'s':''}`;
+  saveData();
+  const el = document.getElementById('content');
+  switch(state.tab){
+    case 'dashboard':      el.innerHTML = renderDashboard();    injectTeamAllocCard(); break;
+    case 'overview':       el.innerHTML = renderOverview();     break;
+    case 'person-detail':  el.innerHTML = renderPersonDetail(); break;
+    case 'planning':       el.innerHTML = renderPlanning();     break;
+    case 'projects':       el.innerHTML = renderProjects();     break;
+    case 'project-detail': el.innerHTML = renderProjectDetail();break;
+    case 'services':       el.innerHTML = renderServices();     break;
+    case 'team-detail':    el.innerHTML = renderTeamDetail();   break;
+    case 'inbox':          el.innerHTML = renderInbox();        break;
+    case 'pipeline':       el.innerHTML = renderPipeline();     break;
+    case 'add':
+      if(role()==='Project Manager') state.addType = 'Project';
+      el.innerHTML = renderAdd(); break;
+  }
+}
+
+function injectTeamAllocCard(){
+  const el = document.getElementById('team-alloc-card'); if(!el) return;
+  const cw = CURRENT_WEEK, AR = state.dashAllocRange||8;
+  const allocWeeks = WEEKS.slice(cw-1, cw-1+AR).filter(w => w<=52);
+  el.innerHTML = buildTeamAllocCard(buildTeamMemberMap(), allocWeeks, cw, state);
+}
+
+// ── Dashboard ─────────────────────────────────────────────────────────────────
+function buildTeamAllocCard(tmMap, allocWeeks, cw, state){
+  const rangeOpts = [4,8,12,26,52].map(n => {
+    const on = state.dashAllocRange===n;
+    return `<button onclick="state.dashAllocRange=${n};render()" style="padding:5px 14px;font-size:12px;font-weight:600;border-radius:20px;border:1px solid ${on?'#1D9E75':'#e5e7eb'};background:${on?'#1D9E75':'#fff'};color:${on?'#fff':'#6b7280'};cursor:pointer;font-family:inherit">${n}W</button>`;
+  }).join('');
+
+  const wHeaders = allocWeeks.map(w => {
+    const isNow = w===cw;
+    return `<th style="padding:8px 4px;text-align:center;min-width:58px;${isNow?'background:var(--green-bg)':''}">
+      <div style="font-size:10px;font-weight:700;color:${isNow?'#0f6e56':'#9ca3af'};font-family:DM Mono,monospace">W${w}</div>
+      ${isNow?'<div style="width:4px;height:4px;background:#1D9E75;border-radius:50%;margin:2px auto 0"></div>':''}
+    </th>`;
+  }).join('');
+
+  const teamRows = TEAMS.map((team,ti) => {
+    const icon = team==='Development'?'💻':team==='Platform'?'☁':'📊';
+    const mc = tmMap[team].length;
+    const now = calcTeamAllocForWeek(tmMap, team, cw);
+    const bigColor = mc===0?'#d1d5db':now.avg>100?'#b91c1c':now.avg>=80?'#0f6e56':now.avg>=50?'#b45309':'#185fa5';
+    const pills =
+      (now.fullyBooked?`<span style="font-size:10px;font-weight:700;color:#065f46;background:#d1fae5;padding:1px 6px;border-radius:20px">${now.fullyBooked} full</span>`:'') +
+      (now.free?`<span style="font-size:10px;font-weight:700;color:#185fa5;background:#dbeafe;padding:1px 6px;border-radius:20px;margin-left:4px">${now.free} free</span>`:'') +
+      (now.over?`<span style="font-size:10px;font-weight:700;color:#b91c1c;background:#fef2f2;padding:1px 6px;border-radius:20px;margin-left:4px">${now.over} over</span>`:'') +
+      (mc===0?'<span style="font-size:10px;color:#d1d5db;font-style:italic">no members yet</span>':'');
+
+    const wCells = mc===0
+      ? `<td colspan="${allocWeeks.length}" style="padding:16px 24px"><div style="display:flex;align-items:center;gap:10px"><div style="flex:1;height:8px;background:#f3f4f6;border-radius:4px"></div><span style="font-size:12px;color:#d1d5db;font-style:italic">No members yet</span></div></td>`
+      : allocWeeks.map(w => {
+          const ta = calcTeamAllocForWeek(tmMap, team, w);
+          const isNow = w===cw;
+          const barH = Math.min(Math.round((ta.avg/100)*52), 52);
+          const barColor = ta.avg>100?'#fca5a5':ta.avg>=80?'#6ee7b7':ta.avg>=50?'#fcd34d':ta.avg>0?'#93c5fd':'#e5e7eb';
+          const textColor = ta.avg>100?'#b91c1c':ta.avg>=80?'#065f46':ta.avg>=50?'#92400e':ta.avg>0?'#1e40af':'#d1d5db';
+          return `<td style="padding:8px 4px;text-align:center;vertical-align:bottom;${isNow?'background:var(--green-bg);':''}border-bottom:1px solid #f3f4f6">
+            <div style="display:flex;flex-direction:column;align-items:center;gap:3px">
+              ${ta.over?`<div style="font-size:9px;color:#b91c1c;font-weight:700">+${ta.over}</div>`:'<div style="font-size:9px;color:transparent">·</div>'}
+              <div style="font-size:12px;font-weight:700;color:${textColor};font-family:DM Mono,monospace;line-height:1">${ta.avg>0?ta.avg+'%':'–'}</div>
+              <div style="width:32px;height:52px;background:#f3f4f6;border-radius:4px;overflow:hidden;display:flex;align-items:flex-end">
+                <div style="width:100%;height:${barH}px;background:${barColor};border-radius:4px"></div>
+              </div>
+            </div>
+          </td>`;
+        }).join('');
+
+    return `<tr style="border-bottom:${ti<2?'2px solid #e5e7eb':'1px solid #f3f4f6'}">
+      <td style="padding:14px 24px;vertical-align:middle;min-width:220px">
+        <div style="display:flex;align-items:center;gap:12px">
+          <div style="width:44px;height:44px;border-radius:12px;background:var(--green-bg);display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0">${icon}</div>
+          <div style="flex:1;min-width:0">
+            <div style="font-size:14px;font-weight:700;color:#111827">${team}</div>
+            <div style="font-size:12px;color:#6b7280;margin-top:2px">${mc} member${mc!==1?'s':''}</div>
+            <div style="display:flex;gap:6px;margin-top:4px;flex-wrap:wrap">${pills}</div>
+          </div>
+          <div style="text-align:right;flex-shrink:0">
+            <div style="font-size:28px;font-weight:700;color:${bigColor};font-family:DM Mono,monospace;line-height:1">${mc===0?'—':now.avg+'%'}</div>
+            <div style="font-size:10px;color:#9ca3af;margin-top:2px">now</div>
+          </div>
+        </div>
+      </td>${wCells}</tr>`;
+  }).join('');
+
+  return `<div class="card">
+    <div class="card-hdr" style="padding:16px 24px">
+      <div>
+        <span class="card-title" style="font-size:15px">📊 Team allocation</span>
+        <div style="font-size:12px;color:#9ca3af;margin-top:2px">Average allocation % per team · ${allocWeeks.length} weeks shown</div>
+      </div>
+      <div style="display:flex;gap:6px;align-items:center">${rangeOpts}</div>
+    </div>
+    <div style="overflow-x:auto">
+      <table style="width:100%;border-collapse:collapse;min-width:${180+allocWeeks.length*62}px">
+        <thead><tr style="border-bottom:2px solid #e5e7eb">
+          <th style="padding:10px 24px;text-align:left;font-size:11px;font-weight:700;color:#9ca3af;text-transform:uppercase;letter-spacing:.05em;min-width:180px">Team</th>
+          ${wHeaders}
+        </tr></thead>
+        <tbody>${teamRows}</tbody>
+      </table>
+    </div>
+    <div style="padding:12px 24px;border-top:1px solid #f3f4f6;display:flex;gap:20px;font-size:11px;color:#6b7280;flex-wrap:wrap;align-items:center">
+      <span style="font-weight:600;color:#9ca3af;text-transform:uppercase;letter-spacing:.05em;font-size:10px">Legend</span>
+      <span style="display:flex;align-items:center;gap:5px"><span style="width:12px;height:12px;border-radius:3px;background:#93c5fd;display:inline-block"></span>Low &lt;50%</span>
+      <span style="display:flex;align-items:center;gap:5px"><span style="width:12px;height:12px;border-radius:3px;background:#fcd34d;display:inline-block"></span>Medium 50–79%</span>
+      <span style="display:flex;align-items:center;gap:5px"><span style="width:12px;height:12px;border-radius:3px;background:#6ee7b7;display:inline-block"></span>High 80–100%</span>
+      <span style="display:flex;align-items:center;gap:5px"><span style="width:12px;height:12px;border-radius:3px;background:#fca5a5;display:inline-block"></span>Overbooked</span>
+      <span style="display:flex;align-items:center;gap:5px"><span style="width:4px;height:4px;border-radius:50%;background:#1D9E75;display:inline-block"></span>Current week</span>
+    </div>
+  </div>`;
+}
+
+
+// ── renderDashboard ───────────────────────────────────────────────────────────
 function renderDashboard(){
-  const r=role(), ce=canEdit(), cw=CURRENT_WEEK, NEXT=4;
-  function personTotalAtWeek(name,w){ return state.assignments.filter(a=>a.name===name).reduce((s,a)=>s+getAlloc(a,w),0); }
-  const isTM=r==='Team Member', un=userName().trim().toLowerCase();
-  const allPeople=isTM?[...new Set(state.assignments.filter(a=>a.committed&&a.name.trim().toLowerCase()===un).map(a=>a.name))]:[...new Set(state.assignments.map(a=>a.name))];
-  const activeNow=allPeople.filter(name=>personTotalAtWeek(name,cw)>0);
-  const activeProjects=state.projects.filter(p=>state.assignments.some(a=>a.workName===p.name&&a.periods.some(per=>cw>=per.startWeek&&cw<=per.endWeek)));
-  const activeProjectNames=new Set(activeProjects.map(p=>p.name));
-  const startingSoon=state.assignments.filter(a=>a.type==='Project'&&activeProjectNames.has(a.workName)&&a.periods.some(p=>p.startWeek>cw&&p.startWeek<=cw+NEXT));
-  const startingSoonProjects=[...new Set(startingSoon.map(a=>a.workName))];
-  const endingSoon=state.assignments.filter(a=>a.type==='Project'&&activeProjectNames.has(a.workName)&&a.periods.some(p=>p.endWeek>=cw&&p.endWeek<=cw+NEXT));
-  const overbookedNow=allPeople.filter(name=>personTotalAtWeek(name,cw)>100);
-  const allRegistered=isTM?[userName().trim()].filter(n=>n):[...new Set([...state.teamMembers.map(m=>m.name),...state.assignments.map(a=>a.name)])];
-  const freeNow=allRegistered.filter(name=>personTotalAtWeek(name,cw)===0);
-  const uncommitted=state.assignments.filter(a=>!a.committed);
-  const uncommittedByProject={};
-  uncommitted.forEach(a=>{ if(!uncommittedByProject[a.workName]) uncommittedByProject[a.workName]=[]; uncommittedByProject[a.workName].push(a); });
-  const inboxPending=state.inboxItems.filter(i=>i.status==='new');
-  const now_str=new Date().toISOString().split('T')[0];
-  const upcomingProjectEnds=state.projects.filter(p=>p.endDate&&p.endDate>=now_str).sort((a,b)=>a.endDate.localeCompare(b.endDate)).slice(0,5);
-  const weeklyChanges=[];
-  for(let w=cw;w<=Math.min(cw+NEXT-1,52);w++){
-    const starts=state.assignments.filter(a=>a.periods.some(p=>p.startWeek===w));
-    const ends=state.assignments.filter(a=>a.periods.some(p=>p.endWeek===w));
+  const cw = CURRENT_WEEK, NEXT = 4;
+  const isTM = role()==='Team Member', un = userName().trim().toLowerCase();
+
+  function ptw(name, w){ return state.assignments.filter(a=>a.name===name).reduce((s,a)=>s+getAlloc(a,w),0); }
+
+  const allPeople = isTM
+    ? [...new Set(state.assignments.filter(a=>a.committed&&a.name.trim().toLowerCase()===un).map(a=>a.name))]
+    : [...new Set(state.assignments.map(a=>a.name))];
+
+  const activeNow      = allPeople.filter(n => ptw(n,cw) > 0);
+  const overbookedNow  = allPeople.filter(n => ptw(n,cw) > 100);
+  const allRegistered  = isTM
+    ? [userName().trim()].filter(Boolean)
+    : [...new Set([...state.teamMembers.map(m=>m.name), ...state.assignments.map(a=>a.name)])];
+  const freeNow        = allRegistered.filter(n => ptw(n,cw) === 0);
+  const uncommitted    = state.assignments.filter(a => !a.committed);
+  const inboxPending   = state.inboxItems.filter(i => i.status==='new');
+
+  const activeProjects = state.projects.filter(p =>
+    state.assignments.some(a => a.workName===p.name && a.periods.some(per=>cw>=per.startWeek&&cw<=per.endWeek))
+  );
+  const activeProjectNames = new Set(activeProjects.map(p=>p.name));
+
+  const startingSoon = state.assignments.filter(a =>
+    a.type==='Project' && activeProjectNames.has(a.workName) && a.periods.some(p=>p.startWeek>cw&&p.startWeek<=cw+NEXT)
+  );
+  const startingSoonProjects = [...new Set(startingSoon.map(a=>a.workName))];
+
+  const endingSoon = state.assignments.filter(a =>
+    a.type==='Project' && activeProjectNames.has(a.workName) && a.periods.some(p=>p.endWeek>=cw&&p.endWeek<=cw+NEXT)
+  );
+
+  const uncommittedByProject = {};
+  uncommitted.forEach(a => {
+    if(!uncommittedByProject[a.workName]) uncommittedByProject[a.workName] = [];
+    uncommittedByProject[a.workName].push(a);
+  });
+
+  const todayStr = new Date().toISOString().split('T')[0];
+  const upcomingEnds = state.projects
+    .filter(p => p.endDate && p.endDate >= todayStr)
+    .sort((a,b) => a.endDate.localeCompare(b.endDate))
+    .slice(0, 5);
+
+  const weeklyChanges = [];
+  for(let w=cw; w<=Math.min(cw+NEXT-1,52); w++){
+    const starts = state.assignments.filter(a => a.periods.some(p=>p.startWeek===w));
+    const ends   = state.assignments.filter(a => a.periods.some(p=>p.endWeek===w));
     if(starts.length||ends.length) weeklyChanges.push({w,starts,ends});
   }
-  function fmtDate(d){ if(!d)return'—'; return new Date(d).toLocaleDateString('en-SE',{day:'2-digit',month:'short'}); }
-  const ALLOC_RANGE=state.dashAllocRange||8;
-  const allocWeeks=WEEKS.slice(cw-1,cw-1+ALLOC_RANGE).filter(w=>w<=52);
-  const teamMembers={'Development':[],'Platform':[],'PMO':[]};
-  const teamNormalize=t=>{ if(!t)return null; const s=t.trim().toLowerCase(); return s==='development'?'Development':s==='platform'?'Platform':s==='pmo'?'PMO':null; };
-  state.teamMembers.forEach(m=>{ const t=teamNormalize(m.team); if(t&&!teamMembers[t].includes(m.name))teamMembers[t].push(m.name); });
-  state.assignments.forEach(a=>{ const t=teamNormalize(a.team); if(t&&!teamMembers[t].includes(a.name))teamMembers[t].push(a.name); });
+
   function pTag(label,color,bg){ return `<span class="dash-tag" style="background:${bg};color:${color}">${label}</span>`; }
+
+  // Needs-attention card
+  const needsAttention = !isTM && (overbookedNow.length||inboxPending.length||uncommitted.length);
+  const attentionHtml = needsAttention ? `
+    <div class="card">
+      <div class="card-hdr"><span class="card-title">⚠ Needs attention</span></div>
+      ${overbookedNow.map(n=>`<div class="alert-row"><span class="alert-icon">🔴</span><div style="flex:1"><strong>${n}</strong> is overbooked in W${cw} (${ptw(n,cw)}%)</div><button class="btn sm" onclick="openPersonDetail('${n.replace(/'/g,"\\'")}')">View →</button></div>`).join('')}
+      ${inboxPending.map(i=>`<div class="alert-row"><span class="alert-icon">📥</span><div style="flex:1"><strong>${i.title}</strong> — in inbox, needs classification</div><button class="btn sm" onclick="setTab('inbox')">Go to Inbox →</button></div>`).join('')}
+      ${Object.entries(uncommittedByProject).slice(0,4).map(([proj,items])=>{
+        const p = state.projects.find(p=>p.name===proj);
+        return `<div class="alert-row"><span class="alert-icon">⏳</span><div style="flex:1">${items.length} planned resource${items.length!==1?'s':''} not yet committed on <strong>${proj}</strong></div>${p?`<button class="btn sm" onclick="openProject(${p.id})">View →</button>`:''}</div>`;
+      }).join('')}
+    </div>` : `<div class="card"><div style="padding:14px 18px;font-size:13px;color:#0f6e56;font-weight:600">✅ Everything looks good — no immediate issues.</div></div>`;
+
+  // Tech debt card
+  const hasTargets = state.baseServices.some(s=>s.targetPct>0);
+  const debtHtml = hasTargets ? (()=>{
+    const rows = TEAMS.map(team => {
+      const d = calcTeamDebt(team);
+      const svcsWT = state.baseServices.filter(s=>s.team===team&&s.targetPct>0);
+      if(!svcsWT.length) return '';
+      const icon = team==='Development'?'💻':team==='Platform'?'☁':'📊';
+      const color = d.debtPct===0?'#0f6e56':d.debtPct<200?'#b45309':'#b91c1c';
+      const maxDebt = svcsWT.reduce((s,sv)=>s+sv.targetPct*(CURRENT_WEEK-1),0);
+      const barPct  = maxDebt>0 ? Math.min(100,Math.round((d.debtPct/maxDebt)*100)) : 0;
+      return `<div class="dash-row" style="cursor:pointer" onclick="openTeam('${team}')">
+        <div style="display:flex;align-items:center;gap:10px;flex:1;min-width:0">
+          <span style="font-size:18px">${icon}</span>
+          <div style="flex:1;min-width:0">
+            <div style="font-weight:600;font-size:13px">${team}</div>
+            <div style="margin-top:4px;height:5px;background:#f3f4f6;border-radius:3px;overflow:hidden">
+              <div style="height:100%;width:${barPct}%;background:${color};border-radius:3px"></div>
+            </div>
+            <div style="font-size:10px;color:#9ca3af;margin-top:2px">${svcsWT.length} service${svcsWT.length!==1?'s':''} tracked</div>
+          </div>
+        </div>
+        <div style="text-align:right;flex-shrink:0;margin-left:16px">
+          <div style="font-size:20px;font-weight:700;color:${color};font-family:'DM Mono',monospace;line-height:1">${d.debtPct===0?'✓':d.debtPct+'%'}</div>
+          ${d.debtPct>0?`<div style="font-size:10px;color:#9ca3af;margin-top:2px">${d.debtWeeks}w fulltime</div>`:'<div style="font-size:10px;color:#0f6e56;margin-top:2px">on track</div>'}
+        </div>
+        <span style="font-size:12px;color:#9ca3af;margin-left:8px">→</span>
+      </div>`;
+    }).filter(Boolean).join('');
+    return rows ? `<div class="card">
+      <div class="card-hdr">
+        <span class="card-title">🔧 Technical debt — Base Services</span>
+        <span class="card-sub">Accumulated W1–W${cw-1} · click team for details</span>
+      </div>${rows}</div>` : '';
+  })() : '';
+
   return `
     <div class="metrics" style="grid-template-columns:repeat(6,1fr);margin-bottom:0">
       <div class="metric"><div class="metric-lbl">Current week</div><div class="metric-val">W${cw}</div></div>
@@ -236,61 +874,65 @@ function renderDashboard(){
       <div class="metric"><div class="metric-lbl">Uncommitted</div><div class="metric-val" style="color:#b45309">${uncommitted.length}</div></div>
       <div class="metric"><div class="metric-lbl">Inbox</div><div class="metric-val ${inboxPending.length?'red':''}">${inboxPending.length}</div></div>
     </div>
-    <div id='team-alloc-card'></div>
-    ${!isTM&&(overbookedNow.length||inboxPending.length||uncommitted.length)?`
-    <div class="card">
-      <div class="card-hdr"><span class="card-title">⚠ Needs attention</span></div>
-      ${overbookedNow.map(name=>`<div class="alert-row"><span class="alert-icon">🔴</span><div style="flex:1"><strong>${name}</strong> is overbooked in W${cw} (${personTotalAtWeek(name,cw)}%)</div><button class="btn sm" onclick="openPersonDetail('${name.replace(/'/g,"\\'")}')">View →</button></div>`).join('')}
-      ${inboxPending.map(i=>`<div class="alert-row"><span class="alert-icon">📥</span><div style="flex:1"><strong>${i.title}</strong> — in inbox, needs classification</div><button class="btn sm" onclick="setTab('inbox')">Go to Inbox →</button></div>`).join('')}
-      ${Object.entries(uncommittedByProject).slice(0,4).map(([proj,items])=>`<div class="alert-row"><span class="alert-icon">⏳</span><div style="flex:1">${items.length} planned resource${items.length!==1?'s':''} not yet committed on <strong>${proj}</strong></div>${state.projects.find(p=>p.name===proj)?`<button class="btn sm" onclick="openProject(${state.projects.find(p=>p.name===proj).id})">View →</button>`:''}</div>`).join('')}
-    </div>`:`<div class="card"><div style="padding:14px 18px;font-size:13px;color:#0f6e56;font-weight:600">✅ Everything looks good — no immediate issues.</div></div>`}
+    <div id="team-alloc-card"></div>
+    ${attentionHtml}
     <div class="dash-grid">
       <div class="card">
         <div class="card-hdr"><span class="card-title">👥 Active this week (W${cw})</span></div>
-        ${!activeNow.length?`<div class="empty" style="padding:20px">No active resources this week.</div>`:activeNow.map(name=>{
-          const alloc=personTotalAtWeek(name,cw);
-          const info=state.assignments.find(a=>a.name===name)||{team:'',skillset:''};
-          const works=[...new Set(state.assignments.filter(a=>a.name===name&&a.periods.some(p=>cw>=p.startWeek&&cw<=p.endWeek)).map(a=>a.workName))];
-          return `<div class="dash-row" onclick="openPersonDetail('${name.replace(/'/g,"\\'")}')"><div style="flex:1"><div style="font-weight:600">${name}</div><div style="font-size:11px;color:#9ca3af">${info.team} · ${works.join(', ')}</div></div><span class="dash-tag" style="background:${alloc>100?'#fecaca;color:#b91c1c':alloc===100?'#d1fae5;color:#065f46':'#fef3c7;color:#92400e'}">${alloc}%</span></div>`;
+        ${!activeNow.length ? `<div class="empty" style="padding:20px">No active resources this week.</div>` : activeNow.map(name => {
+          const alloc = ptw(name,cw);
+          const info  = state.assignments.find(a=>a.name===name)||{team:'',skillset:''};
+          const works = [...new Set(state.assignments.filter(a=>a.name===name&&a.periods.some(p=>cw>=p.startWeek&&cw<=p.endWeek)).map(a=>a.workName))];
+          return `<div class="dash-row" onclick="openPersonDetail('${name.replace(/'/g,"\\'")}')">
+            <div style="flex:1"><div style="font-weight:600">${name}</div><div style="font-size:11px;color:#9ca3af">${info.team} · ${works.join(', ')}</div></div>
+            <span class="dash-tag" style="background:${alloc>100?'#fecaca;color:#b91c1c':alloc===100?'#d1fae5;color:#065f46':'#fef3c7;color:#92400e'}">${alloc}%</span>
+          </div>`;
         }).join('')}
       </div>
       <div class="card">
         <div class="card-hdr"><span class="card-title">💼 Active projects (W${cw})</span></div>
-        ${!activeProjects.length?`<div class="empty" style="padding:20px">No projects active this week.</div>`:activeProjects.map(p=>{
-          const resources=state.assignments.filter(a=>a.workName===p.name&&a.periods.some(per=>cw>=per.startWeek&&cw<=per.endWeek));
-          const comm=resources.filter(a=>a.committed).length, plan=resources.filter(a=>!a.committed).length;
-          return `<div class="dash-row" onclick="openProject(${p.id})"><div style="flex:1"><div style="font-weight:600">${p.name}</div><div style="font-size:11px;color:#9ca3af">ends ${fmtDate(p.endDate)} · ${resources.length} resource${resources.length!==1?'s':''}</div></div><div style="display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end">${comm?pTag('✓ '+comm,'#065f46','#d1fae5'):''}${plan?pTag('⏳ '+plan,'#92400e','#fef3c7'):''}</div></div>`;
+        ${!activeProjects.length ? `<div class="empty" style="padding:20px">No projects active this week.</div>` : activeProjects.map(p => {
+          const res  = state.assignments.filter(a=>a.workName===p.name&&a.periods.some(per=>cw>=per.startWeek&&cw<=per.endWeek));
+          const comm = res.filter(a=>a.committed).length, plan = res.filter(a=>!a.committed).length;
+          return `<div class="dash-row" onclick="openProject(${p.id})">
+            <div style="flex:1"><div style="font-weight:600">${p.name}</div><div style="font-size:11px;color:#9ca3af">ends ${fmtDate(p.endDate)} · ${res.length} resource${res.length!==1?'s':''}</div></div>
+            <div style="display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end">${comm?pTag('✓ '+comm,'#065f46','#d1fae5'):''}${plan?pTag('⏳ '+plan,'#92400e','#fef3c7'):''}</div>
+          </div>`;
         }).join('')}
       </div>
       <div class="card">
         <div class="card-hdr"><span class="card-title">🚀 Starting soon (next ${NEXT} weeks)</span></div>
-        ${!startingSoonProjects.length?`<div class="empty" style="padding:20px">Nothing starting in the next ${NEXT} weeks.</div>`:startingSoonProjects.map(workName=>{
-          const items=startingSoon.filter(a=>a.workName===workName);
-          const firstWeek=Math.min(...items.flatMap(a=>a.periods.filter(p=>p.startWeek>cw).map(p=>p.startWeek)));
-          const proj=state.projects.find(p=>p.name===workName);
-          return `<div class="dash-row" ${proj?`onclick="openProject(${proj.id})"`:''}><div style="flex:1"><div style="font-weight:600">${workName}</div><div style="font-size:11px;color:#9ca3af">${items.length} resource${items.length!==1?'s':''}</div></div><span class="week-badge">W${firstWeek}</span></div>`;
+        ${!startingSoonProjects.length ? `<div class="empty" style="padding:20px">Nothing starting in the next ${NEXT} weeks.</div>` : startingSoonProjects.map(wn => {
+          const items = startingSoon.filter(a=>a.workName===wn);
+          const firstW = Math.min(...items.flatMap(a=>a.periods.filter(p=>p.startWeek>cw).map(p=>p.startWeek)));
+          const proj = state.projects.find(p=>p.name===wn);
+          return `<div class="dash-row" ${proj?`onclick="openProject(${proj.id})"`:''}><div style="flex:1"><div style="font-weight:600">${wn}</div><div style="font-size:11px;color:#9ca3af">${items.length} resource${items.length!==1?'s':''}</div></div><span class="week-badge">W${firstW}</span></div>`;
         }).join('')}
       </div>
       <div class="card">
         <div class="card-hdr"><span class="card-title">🏁 Ending soon (next ${NEXT} weeks)</span></div>
-        ${!endingSoon.length?`<div class="empty" style="padding:20px">Nothing ending in the next ${NEXT} weeks.</div>`:[...new Map(endingSoon.map(a=>[a.name+a.workName,a])).values()].map(a=>{
-          const lastWeek=Math.max(...a.periods.filter(p=>p.endWeek>=cw&&p.endWeek<=cw+NEXT).map(p=>p.endWeek));
-          return `<div class="dash-row" onclick="openPersonDetail('${a.name.replace(/'/g,"\\'")}')"><div style="flex:1"><div style="font-weight:600">${a.name}</div><div style="font-size:11px;color:#9ca3af">${a.workName}</div></div><span class="week-badge">ends W${lastWeek}</span></div>`;
+        ${!endingSoon.length ? `<div class="empty" style="padding:20px">Nothing ending in the next ${NEXT} weeks.</div>` : [...new Map(endingSoon.map(a=>[a.name+a.workName,a])).values()].map(a => {
+          const lastW = Math.max(...a.periods.filter(p=>p.endWeek>=cw&&p.endWeek<=cw+NEXT).map(p=>p.endWeek));
+          return `<div class="dash-row" onclick="openPersonDetail('${a.name.replace(/'/g,"\\'")}')"><div style="flex:1"><div style="font-weight:600">${a.name}</div><div style="font-size:11px;color:#9ca3af">${a.workName}</div></div><span class="week-badge">ends W${lastW}</span></div>`;
         }).join('')}
       </div>
       <div class="card">
         <div class="card-hdr"><span class="card-title">🟢 Free this week (W${cw})</span></div>
-        ${!freeNow.length?`<div class="empty" style="padding:20px">Everyone is allocated this week.</div>`:freeNow.map(name=>{
-          const info=state.teamMembers.find(m=>m.name===name)||state.assignments.find(a=>a.name===name)||{};
-          let nextBusy=null; for(let w=cw+1;w<=52;w++){ if(personTotalAtWeek(name,w)>0){nextBusy=w;break;} }
+        ${!freeNow.length ? `<div class="empty" style="padding:20px">Everyone is allocated this week.</div>` : freeNow.map(name => {
+          const info = state.teamMembers.find(m=>m.name===name) || state.assignments.find(a=>a.name===name) || {};
+          let nextBusy = null;
+          for(let w=cw+1;w<=52;w++){ if(ptw(name,w)>0){nextBusy=w;break;} }
           return `<div class="dash-row" onclick="openPersonDetail('${name.replace(/'/g,"\\'")}')"><div style="flex:1"><div style="font-weight:600">${name}</div><div style="font-size:11px;color:#9ca3af">${info.team||''} · ${info.skillset||''}</div></div><span style="font-size:11px;color:#9ca3af">${nextBusy?'busy W'+nextBusy:'free all year'}</span></div>`;
         }).join('')}
       </div>
       <div class="card">
         <div class="card-hdr"><span class="card-title">📆 Week-by-week (W${cw}–W${Math.min(cw+NEXT-1,52)})</span></div>
-        ${!weeklyChanges.length?`<div class="empty" style="padding:20px">No changes in the next ${NEXT} weeks.</div>`:weeklyChanges.map(({w,starts,ends})=>`
+        ${!weeklyChanges.length ? `<div class="empty" style="padding:20px">No changes in the next ${NEXT} weeks.</div>` : weeklyChanges.map(({w,starts,ends}) => `
           <div style="padding:10px 14px;border-bottom:1px solid #f3f4f6">
-            <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px"><span class="week-badge" style="background:#e0f2fe;color:#075985">W${w}</span>${w===cw?'<span style="font-size:10px;font-weight:700;color:#0f6e56">← current</span>':''}</div>
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+              <span class="week-badge" style="background:#e0f2fe;color:#075985">W${w}</span>
+              ${w===cw?'<span style="font-size:10px;font-weight:700;color:#0f6e56">← current</span>':''}
+            </div>
             ${starts.length?`<div style="font-size:11px;color:#0f6e56;margin-bottom:3px">▶ Starts: ${[...new Set(starts.map(a=>a.name))].join(', ')}</div>`:''}
             ${ends.length?`<div style="font-size:11px;color:#b45309">■ Ends: ${[...new Set(ends.map(a=>a.name))].join(', ')}</div>`:''}
           </div>`).join('')}
@@ -299,101 +941,94 @@ function renderDashboard(){
     <div class="card">
       <div class="card-hdr"><span class="card-title">🏢 Organisation</span></div>
       <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:0;border-top:1px solid #f3f4f6">
-        ${['Development','Platform','PMO'].map(team=>{
-          const cfg=state.teamConfig[team]||{}, members=state.teamMembers.filter(m=>m.team===team);
-          return `<div style="padding:14px 18px;border-right:1px solid #f3f4f6"><div style="font-size:13px;font-weight:700;color:#111827;margin-bottom:10px">${team==='Development'?'💻':team==='Platform'?'☁':'📊'} ${team}</div><div style="margin-bottom:8px"><div class="org-label">Team Lead</div><div class="org-person" style="color:${cfg.teamlead?'#0f6e56':'#9ca3af'}">${cfg.teamlead||'Not assigned'}</div></div><div style="margin-bottom:10px"><div class="org-label">Manager</div><div class="org-person" style="color:${cfg.manager?'#185fa5':'#9ca3af'}">${cfg.manager||'Not assigned'}</div></div><div class="org-label">${members.length} member${members.length!==1?'s':''}</div>${members.slice(0,4).map(m=>`<div style="font-size:12px;color:#6b7280;padding:2px 0;display:flex;align-items:center;gap:6px"><span style="width:6px;height:6px;border-radius:50%;background:${m.country==='Sweden'?'#3b82f6':'#f59e0b'};display:inline-block;flex-shrink:0"></span>${m.name}</div>`).join('')}${members.length>4?`<div style="font-size:11px;color:#9ca3af;margin-top:4px">+${members.length-4} more</div>`:''}</div>`;
+        ${TEAMS.map(team => {
+          const cfg = state.teamConfig[team]||{}, members = state.teamMembers.filter(m=>m.team===team);
+          const icon = team==='Development'?'💻':team==='Platform'?'☁':'📊';
+          return `<div style="padding:14px 18px;border-right:1px solid #f3f4f6">
+            <div style="font-size:13px;font-weight:700;color:#111827;margin-bottom:10px">${icon} ${team}</div>
+            <div style="margin-bottom:8px"><div class="org-label">Team Lead</div><div class="org-person" style="color:${cfg.teamlead?'#0f6e56':'#9ca3af'}">${cfg.teamlead||'Not assigned'}</div></div>
+            <div style="margin-bottom:10px"><div class="org-label">Manager</div><div class="org-person" style="color:${cfg.manager?'#185fa5':'#9ca3af'}">${cfg.manager||'Not assigned'}</div></div>
+            <div class="org-label">${members.length} member${members.length!==1?'s':''}</div>
+            ${members.slice(0,4).map(m=>`<div style="font-size:12px;color:#6b7280;padding:2px 0;display:flex;align-items:center;gap:6px"><span style="width:6px;height:6px;border-radius:50%;background:${m.country==='Sweden'?'#3b82f6':'#f59e0b'};display:inline-block;flex-shrink:0"></span>${m.name}</div>`).join('')}
+            ${members.length>4?`<div style="font-size:11px;color:#9ca3af;margin-top:4px">+${members.length-4} more</div>`:''}
+          </div>`;
         }).join('')}
       </div>
     </div>
-    ${upcomingProjectEnds.length?`
+    ${upcomingEnds.length ? `
     <div class="card">
       <div class="card-hdr"><span class="card-title">📅 Upcoming project end dates</span></div>
-      ${upcomingProjectEnds.map(p=>{
-        const resources=state.assignments.filter(a=>a.workName===p.name);
-        const daysLeft=Math.ceil((new Date(p.endDate)-new Date())/86400000);
-        const urgency=daysLeft<=14?'#b91c1c':daysLeft<=30?'#b45309':'#374151';
-        return `<div class="dash-row" onclick="openProject(${p.id})"><div style="flex:1"><div style="font-weight:600">${p.name}</div><div style="font-size:11px;color:#9ca3af">${resources.length} resource${resources.length!==1?'s':''}</div></div><div style="text-align:right"><div style="font-size:12px;font-weight:700;color:${urgency}">${fmtDate(p.endDate)}</div><div style="font-size:10px;color:#9ca3af">${daysLeft} day${daysLeft!==1?'s':''} left</div></div></div>`;
+      ${upcomingEnds.map(p => {
+        const res = state.assignments.filter(a=>a.workName===p.name);
+        const days = Math.ceil((new Date(p.endDate)-new Date())/86400000);
+        const urgency = days<=14?'#b91c1c':days<=30?'#b45309':'#374151';
+        return `<div class="dash-row" onclick="openProject(${p.id})"><div style="flex:1"><div style="font-weight:600">${p.name}</div><div style="font-size:11px;color:#9ca3af">${res.length} resource${res.length!==1?'s':''}</div></div><div style="text-align:right"><div style="font-size:12px;font-weight:700;color:${urgency}">${fmtDate(p.endDate)}</div><div style="font-size:10px;color:#9ca3af">${days} day${days!==1?'s':''} left</div></div></div>`;
       }).join('')}
-    </div>`:''}
-
-    ${(()=>{
-      // Technical debt summary card — only show if any service has a target
-      const hasAnyTarget = state.baseServices.some(s=>s.targetPct>0);
-      if(!hasAnyTarget) return '';
-      const teamDebtRows = ['Development','Platform','PMO'].map(team=>{
-        const d = calcTeamDebt(team);
-        const icon = team==='Development'?'💻':team==='Platform'?'☁':'📊';
-        const svcsWithTarget = state.baseServices.filter(s=>s.team===team&&s.targetPct>0);
-        if(!svcsWithTarget.length) return '';
-        const color = d.debtPct===0?'#0f6e56':d.debtPct<200?'#b45309':'#b91c1c';
-        const bg    = d.debtPct===0?'#d1fae5':d.debtPct<200?'#fef3c7':'#fef2f2';
-        const maxDebt = svcsWithTarget.reduce((s,sv)=>s+sv.targetPct*(CURRENT_WEEK-1),0);
-        const barPct = maxDebt>0 ? Math.min(100, Math.round((d.debtPct/maxDebt)*100)) : 0;
-        return `<div class="dash-row" style="cursor:pointer" onclick="openTeam('${team}')">
-          <div style="display:flex;align-items:center;gap:10px;flex:1;min-width:0">
-            <span style="font-size:18px">${icon}</span>
-            <div style="flex:1;min-width:0">
-              <div style="font-weight:600;font-size:13px">${team}</div>
-              <div style="margin-top:4px;height:5px;background:#f3f4f6;border-radius:3px;overflow:hidden">
-                <div style="height:100%;width:${barPct}%;background:${color};border-radius:3px;transition:width .3s"></div>
-              </div>
-              <div style="font-size:10px;color:#9ca3af;margin-top:2px">${svcsWithTarget.length} service${svcsWithTarget.length!==1?'s':''} tracked</div>
-            </div>
-          </div>
-          <div style="text-align:right;flex-shrink:0;margin-left:16px">
-            <div style="font-size:20px;font-weight:700;color:${color};font-family:'DM Mono',monospace;line-height:1">${d.debtPct===0?'✓':d.debtPct+'%'}</div>
-            ${d.debtPct>0?`<div style="font-size:10px;color:#9ca3af;margin-top:2px">${d.debtWeeks}w fulltime</div>`:'<div style="font-size:10px;color:#0f6e56;margin-top:2px">on track</div>'}
-          </div>
-          <span style="font-size:12px;color:#9ca3af;margin-left:8px">→</span>
-        </div>`;
-      }).filter(Boolean).join('');
-      if(!teamDebtRows) return '';
-      return `<div class="card">
-        <div class="card-hdr">
-          <span class="card-title">🔧 Technical debt — Base Services</span>
-          <span class="card-sub">Accumulated W1–W${CURRENT_WEEK-1} · click team for details</span>
-        </div>
-        ${teamDebtRows}
-      </div>`;
-    })()}
+    </div>` : ''}
+    ${debtHtml}
   `;
 }
 
-function openPersonDetail(name){
-  if(role()==='Team Member'&&name.trim().toLowerCase()!==userName().trim().toLowerCase()) return;
-  state.selectedPerson=name; state.tab='person-detail';
-  document.getElementById('tab-title').textContent=name;
-  document.querySelectorAll('.nav-item').forEach(el=>el.classList.remove('active'));
-  render();
-}
-
+// ── renderPersonDetail ────────────────────────────────────────────────────────
 function renderPersonDetail(){
-  const name=state.selectedPerson;
+  const name = state.selectedPerson;
   if(!name) return `<div class="card"><div class="empty">No person selected.</div></div>`;
-  const r=role(), ce=canEdit();
-  const personAssignments=visibleAssignments().filter(a=>a.name===name);
-  const info=personAssignments[0]||state.teamMembers.find(m=>m.name===name);
+  const ce = canEdit();
+  const personAssignments = visibleAssignments().filter(a => a.name===name);
+  const info = personAssignments[0] || state.teamMembers.find(m => m.name===name);
   if(!info) return `<div class="card"><div class="empty">Person not found.</div></div>`;
-  const committed=personAssignments.filter(a=>a.committed), planned=personAssignments.filter(a=>!a.committed);
-  const weekTotals=WEEKS.map(w=>({w,t:personAssignments.reduce((s,a)=>s+getAlloc(a,w),0)}));
-  const CHUNK=13; const weekRows=[];
-  for(let i=0;i<52;i+=CHUNK) weekRows.push(weekTotals.slice(i,i+CHUNK));
-  function wStyle(d){
-    const isCurrent=d.w===CURRENT_WEEK, outline=isCurrent?'outline:2px solid #1D9E75;outline-offset:-2px;':'';
-    if(d.t>100) return `background:#fecaca;color:#b91c1c;font-weight:700;${outline}`;
+  const committed = personAssignments.filter(a=>a.committed);
+  const planned   = personAssignments.filter(a=>!a.committed);
+
+  // Year calendar (4 rows of 13 weeks)
+  const weekTotals = WEEKS.map(w => ({w, t: personAssignments.reduce((s,a)=>s+getAlloc(a,w),0)}));
+  const calRows = [];
+  for(let i=0; i<52; i+=13) calRows.push(weekTotals.slice(i,i+13));
+  function cellStyle(d){
+    const cur = d.w===CURRENT_WEEK, outline = cur?'outline:2px solid #1D9E75;outline-offset:-2px;':'';
+    if(d.t>100)  return `background:#fecaca;color:#b91c1c;font-weight:700;${outline}`;
     if(d.t===100) return `background:#d1fae5;color:#065f46;font-weight:700;${outline}`;
-    if(d.t>0) return `background:#fef3c7;color:#92400e;font-weight:600;${outline}`;
-    return `background:${isCurrent?'rgba(29,158,117,0.07)':'#f9fafb'};color:#d1d5db;${outline}`;
+    if(d.t>0)    return `background:#fef3c7;color:#92400e;font-weight:600;${outline}`;
+    return `background:${cur?'rgba(29,158,117,0.07)':'#f9fafb'};color:#d1d5db;${outline}`;
   }
-  const calTable=`<div style="overflow-x:auto"><table style="border-collapse:separate;border-spacing:2px;min-width:100%">${weekRows.map(chunk=>`<tr>${chunk.map(d=>`<td style="text-align:center;padding:4px 2px;font-size:10px;font-family:'DM Mono',monospace;border-radius:3px;min-width:34px;${wStyle(d)}"><div style="font-size:9px;opacity:.7;line-height:1">${d.w===CURRENT_WEEK?'▼':''}W${d.w}</div><div style="line-height:1.3">${d.t>0?d.t+'%':'–'}</div></td>`).join('')}</tr>`).join('')}</table></div>`;
+  const calTable = `<div style="overflow-x:auto"><table style="border-collapse:separate;border-spacing:2px;min-width:100%">
+    ${calRows.map(chunk=>`<tr>${chunk.map(d=>`<td style="text-align:center;padding:4px 2px;font-size:10px;font-family:'DM Mono',monospace;border-radius:3px;min-width:34px;${cellStyle(d)}">
+      <div style="font-size:9px;opacity:.7;line-height:1">${d.w===CURRENT_WEEK?'▼':''}W${d.w}</div>
+      <div style="line-height:1.3">${d.t>0?d.t+'%':'–'}</div>
+    </td>`).join('')}</tr>`).join('')}
+  </table></div>`;
+
   function assignmentCard(a){
-    const idx=state.assignments.indexOf(a), totalWks=a.periods.reduce((s,p)=>s+(p.endWeek-p.startWeek+1),0);
-    return `<div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:10px;padding:14px 16px;margin-bottom:10px"><div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px"><div style="flex:1"><div style="display:flex;align-items:center;gap:8px;margin-bottom:4px"><span style="font-size:13px;font-weight:700">${a.workName}</span><span class="badge b-type">${a.type}</span>${a.committed?`<span class="status-committed">✓ Committed</span>`:`<span class="status-planned">⏳ Planned</span>`}</div>${a.committed?`<div style="font-size:11px;color:#9ca3af;margin-bottom:6px">Committed by ${a.committedBy}</div>`:''}<div style="display:flex;flex-wrap:wrap;gap:4px">${a.periods.map((p,pi)=>`<span class="ptag">W${p.startWeek}–${p.endWeek}: ${p.allocationPercent}%${ce?` <span onclick="delPeriod(${idx},${pi})" style="cursor:pointer;opacity:.5;font-size:10px" title="Delete period">✕</span>`:''}</span>`).join('')}</div><div style="font-size:11px;color:#9ca3af;margin-top:6px">${totalWks} week${totalWks!==1?'s':''} total</div></div><div style="display:flex;flex-direction:column;gap:6px;flex-shrink:0">${!a.committed&&ce?`<button class="btn primary sm" onclick="commitA(${idx})">🔒 Commit</button>`:''}${a.committed&&ce?`<button class="btn danger sm" style="font-size:10px;padding:2px 6px" onclick="uncommitA(${idx})">↩ Uncommit</button>`:''}${ce?`<button class="btn danger sm" onclick="delAssignment(${idx})">🗑 Delete</button>`:''}</div></div></div>`;
+    const idx = state.assignments.indexOf(a);
+    const totalWks = a.periods.reduce((s,p)=>s+(p.endWeek-p.startWeek+1),0);
+    return `<div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:10px;padding:14px 16px;margin-bottom:10px">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px">
+        <div style="flex:1">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+            <span style="font-size:13px;font-weight:700">${a.workName}</span>
+            <span class="badge b-type">${a.type}</span>
+            ${a.committed?`<span class="status-committed">✓ Committed</span>`:`<span class="status-planned">⏳ Planned</span>`}
+          </div>
+          ${a.committed?`<div style="font-size:11px;color:#9ca3af;margin-bottom:6px">Committed by ${a.committedBy}</div>`:''}
+          <div style="display:flex;flex-wrap:wrap;gap:4px">
+            ${a.periods.map((p,pi)=>`<span class="ptag">W${p.startWeek}–${p.endWeek}: ${p.allocationPercent}%${ce?` <span onclick="delPeriod(${idx},${pi})" style="cursor:pointer;opacity:.5;font-size:10px">✕</span>`:''}</span>`).join('')}
+          </div>
+          <div style="font-size:11px;color:#9ca3af;margin-top:6px">${totalWks} week${totalWks!==1?'s':''} total</div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:6px;flex-shrink:0">
+          ${!a.committed&&ce?`<button class="btn primary sm" onclick="commitA(${idx})">🔒 Commit</button>`:''}
+          ${a.committed&&ce?`<button class="btn danger sm" style="font-size:10px;padding:2px 6px" onclick="uncommitA(${idx})">↩ Uncommit</button>`:''}
+          ${ce?`<button class="btn danger sm" onclick="delAssignment(${idx})">🗑 Delete</button>`:''}
+        </div>
+      </div>
+    </div>`;
   }
+
   return `
     <div style="margin-bottom:12px"><button class="btn sm" onclick="setTab('overview')">← Back to Overview</button></div>
     <div class="card" style="margin-bottom:16px">
-      <div class="card-hdr"><span class="card-title">👤 ${name}</span>
+      <div class="card-hdr">
+        <span class="card-title">👤 ${name}</span>
         <div style="display:flex;gap:14px;font-size:12px;color:#6b7280;align-items:center;flex-wrap:wrap">
           <span>${info.team||'—'}</span><span>${info.skillset||'—'}</span><span>${info.level||'—'}</span><span>${info.country||'—'}</span>
           ${getTeamlead(name)?`<span>TL: <strong>${getTeamlead(name)}</strong></span>`:''}
@@ -407,88 +1042,192 @@ function renderPersonDetail(){
       <div class="card-hdr"><span class="card-title">📅 Full year allocation</span><span class="card-sub">▼ = current week</span></div>
       <div class="card-body">${calTable}</div>
     </div>
-    ${committed.length?`<div class="card" style="margin-bottom:16px"><div class="card-hdr"><span class="card-title" style="color:#0f6e56">✓ Committed assignments (${committed.length})</span></div><div class="card-body">${committed.map(assignmentCard).join('')}</div></div>`:''}
-    ${planned.length?`<div class="card" style="margin-bottom:16px"><div class="card-hdr"><span class="card-title" style="color:#b45309">⏳ Planned assignments (${planned.length})</span></div><div class="card-body">${planned.map(assignmentCard).join('')}</div></div>`:''}
+    ${committed.length?`<div class="card" style="margin-bottom:16px"><div class="card-hdr"><span class="card-title" style="color:#0f6e56">✓ Committed (${committed.length})</span></div><div class="card-body">${committed.map(assignmentCard).join('')}</div></div>`:''}
+    ${planned.length?`<div class="card" style="margin-bottom:16px"><div class="card-hdr"><span class="card-title" style="color:#b45309">⏳ Planned (${planned.length})</span></div><div class="card-body">${planned.map(assignmentCard).join('')}</div></div>`:''}
     ${!personAssignments.length?`<div class="card"><div class="empty"><span class="empty-icon">📋</span>No assignments for ${name} yet.</div></div>`:''}
   `;
 }
 
-function openProject(projId){
-  state.selectedProject=projId; state.tab='project-detail';
-  document.getElementById('tab-title').textContent='Project Detail';
-  document.querySelectorAll('.nav-item').forEach(el=>el.classList.remove('active'));
-  render();
+// ── renderOverview ────────────────────────────────────────────────────────────
+function renderOverview(){
+  const allPeople = getPeople();
+  const conf = state.assignments.filter(a=>a.committed).length;
+  const plan = state.assignments.filter(a=>!a.committed).length;
+  const r = role(), ce = canEdit();
+
+  const teams  = [...new Set(['Development','Platform','PMO',...allPeople.map(p=>p.team)].filter(Boolean))].sort();
+  const levels = [...new Set(allPeople.map(p=>p.level).filter(Boolean))].sort();
+  const assignmentNames = [...new Set(state.assignments.map(a=>a.workName).filter(Boolean))].sort();
+
+  let people = allPeople.filter(p => {
+    const n = state.fName.trim().toLowerCase(), s = state.fSkill.trim().toLowerCase();
+    if(state.fTeam && p.team !== state.fTeam) return false;
+    if(n && !p.name.toLowerCase().includes(n)) return false;
+    if(s && !p.skillset.toLowerCase().includes(s)) return false;
+    if(state.fLevel && p.level !== state.fLevel) return false;
+    if(state.fAssignment && !visibleAssignments().some(a=>a.name===p.name&&a.workName===state.fAssignment)) return false;
+    if(state.fStatus){
+      const pa = visibleAssignments().filter(a=>a.name===p.name);
+      if(state.fStatus==='planned'    && !pa.some(a=>!a.committed)) return false;
+      if(state.fStatus==='committed'  && !pa.some(a=>a.committed))  return false;
+      if(state.fStatus==='overbooked' && !WEEKS.some(w=>getTotalAlloc(p.name,w)>100)) return false;
+    }
+    return true;
+  });
+
+  const activeFilters = [state.fTeam,state.fName,state.fSkill,state.fLevel,state.fAssignment,state.fStatus].filter(Boolean).length;
+
+  const filterBar = `<div class="filter-bar">
+    ${r!=='Team Member'?`<div><label class="filter-lbl">Name</label><select class="filter-inp" style="width:150px" onchange="state.fName=this.value;render()">
+      <option value="">All people</option>${getAllPeople().map(p=>`<option value="${p.name}"${state.fName===p.name?' selected':''}>${p.name}</option>`).join('')}
+    </select></div>`:''}
+    <div><label class="filter-lbl">Team</label><select class="filter-inp" onchange="state.fTeam=this.value;render()">
+      <option value="">All teams</option>${teams.map(t=>`<option value="${t}"${state.fTeam===t?' selected':''}>${t}</option>`).join('')}
+    </select></div>
+    <div><label class="filter-lbl">Skill</label><input class="filter-inp" style="width:120px" placeholder="Filter skill…" value="${state.fSkill}" oninput="setFilter('fSkill',this.value)" /></div>
+    <div><label class="filter-lbl">Level</label><select class="filter-inp" onchange="state.fLevel=this.value;render()">
+      <option value="">All levels</option>${levels.map(l=>`<option value="${l}"${state.fLevel===l?' selected':''}>${l}</option>`).join('')}
+    </select></div>
+    <div><label class="filter-lbl">Assignment</label><select class="filter-inp" style="max-width:180px" onchange="state.fAssignment=this.value;render()">
+      <option value="">All assignments</option>${assignmentNames.map(a=>`<option value="${a}"${state.fAssignment===a?' selected':''}>${a}</option>`).join('')}
+    </select></div>
+    <div><label class="filter-lbl">Status</label><select class="filter-inp" onchange="state.fStatus=this.value;render()">
+      <option value="">All</option>
+      <option value="planned"${state.fStatus==='planned'?' selected':''}>⏳ Planned only</option>
+      <option value="committed"${state.fStatus==='committed'?' selected':''}>✓ Has committed</option>
+      <option value="overbooked"${state.fStatus==='overbooked'?' selected':''}>🔴 Overbooked</option>
+    </select></div>
+    ${activeFilters>0?`<button class="btn sm" style="margin-top:16px" onclick="state.fTeam='';state.fName='';state.fSkill='';state.fLevel='';state.fAssignment='';state.fStatus='';render()">✕ Clear (${activeFilters})</button>`:''}
+  </div>`;
+
+  const wks = visibleWeeks();
+  const rows = !people.length
+    ? `<div class="empty"><span class="empty-icon">👥</span>${allPeople.length?'No results match your filters.':'No allocations yet. Go to Planning mode to get started.'}</div>`
+    : `<div class="tbl-wrap"><table><thead><tr>
+        <th>Name</th><th>Skill</th><th>Level</th><th>Country</th><th>Team</th><th>Status</th>
+        ${wks.map(w=>wkHdr(w)).join('')}
+      </tr></thead><tbody>${people.map(p => {
+        const dn = (r==='Project Manager'&&visibleAssignments().some(a=>a.name===p.name&&!a.committed)) ? '— Planned resource —' : p.name;
+        const pa = visibleAssignments().filter(a=>a.name===p.name);
+        const hasCom = pa.some(a=>a.committed), hasPlan = pa.some(a=>!a.committed);
+        const statusBadge = hasCom&&hasPlan?`<span class="status-mixed">Mixed</span>`:hasCom?`<span class="status-committed">✓ Committed</span>`:hasPlan?`<span class="status-planned">⏳ Planned</span>`:`<span style="font-size:10px;color:#d1d5db">–</span>`;
+        return `<tr class="${ce?'person-row-click':''}" ${ce?`onclick="openPersonDetail('${p.name.replace(/'/g,"\\'")}')"`:''}">
+          <td style="background:${cBg(p.country)}"><strong>${dn}</strong>${ce?`<span style="font-size:10px;color:#9ca3af;margin-left:6px">→</span>`:''}</td>
+          <td>${p.skillset}</td><td>${p.level}</td><td>${p.country}</td>
+          <td><span style="cursor:pointer;color:#1D9E75;text-decoration:underline" onclick="event.stopPropagation();openTeam('${p.team}')">${p.team}</span></td>
+          <td>${statusBadge}</td>
+          ${wks.map(w=>wkCell(w,getTotalAlloc(p.name,w))).join('')}
+        </tr>`;
+      }).join('')}</tbody></table></div>`;
+
+  return `
+    <div class="metrics">
+      <div class="metric"><div class="metric-lbl">People</div><div class="metric-val">${allPeople.length}</div></div>
+      <div class="metric"><div class="metric-lbl">Assignments</div><div class="metric-val">${state.assignments.length}</div></div>
+      <div class="metric"><div class="metric-lbl">Committed</div><div class="metric-val green">${conf}</div></div>
+      <div class="metric"><div class="metric-lbl">Planned</div><div class="metric-val" style="color:#b45309">${plan}</div></div>
+    </div>
+    <div class="card">
+      <div class="card-hdr">
+        <span class="card-title">📅 Total allocation per person</span>
+        <div style="display:flex;align-items:center;gap:12px">${weekRangeToggle()}<span class="card-sub">${activeFilters>0?`${people.length} of ${allPeople.length} shown`:`W${CURRENT_WEEK}–W52 · click a person for details`}</span></div>
+      </div>
+      ${filterBar}${rows}
+    </div>`;
 }
 
-function saveTeamConfig(team,field,value){
-  if(!state.teamConfig[team]) state.teamConfig[team]={teamlead:'',manager:''};
-  state.teamConfig[team][field]=value;
+// ── renderProjects ────────────────────────────────────────────────────────────
+function renderProjects(){
+  const ce = canEdit(), r = role();
+  const visible = r==='Project Manager' ? state.projects.filter(p=>isPmProject(p)) : state.projects;
+
+  const list = visible.length ? visible.map(p => {
+    const allA = state.assignments.filter(a=>a.workName===p.name);
+    const vis  = r==='Team Member' ? allA.filter(a=>a.committed&&a.name.trim().toLowerCase()===userName().trim().toLowerCase()) : allA;
+    const comm = vis.filter(a=>a.committed).length;
+    const plan = r!=='Team Member' ? vis.filter(a=>!a.committed).length : 0;
+    return `<div class="project-row" style="cursor:pointer;transition:box-shadow .15s"
+      onmouseover="this.style.boxShadow='0 2px 8px rgba(0,0,0,0.08)'" onmouseout="this.style.boxShadow=''"
+      onclick="openProject(${p.id})">
+      <div style="flex:1">
+        <div style="font-size:13px;font-weight:700;color:#111827;margin-bottom:2px">${p.name} <span style="font-size:11px;color:#9ca3af;font-weight:400">→ click to view</span></div>
+        <div style="font-size:11px;color:#9ca3af;margin-top:2px">📅 ${fmtDateLong(p.startDate)} → ${fmtDateLong(p.endDate)}${p.projectManager?` &nbsp;·&nbsp; PM: <strong style="color:#374151">${p.projectManager}</strong>`:''}</div>
+        ${p.description?`<div style="font-size:11px;color:#6b7280;margin-top:3px;max-width:400px;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical">${p.description}</div>`:''}
+      </div>
+      <div style="display:flex;gap:8px;align-items:center">
+        ${comm>0?`<span style="background:#d1fae5;color:#065f46;padding:2px 10px;border-radius:20px;font-size:11px;font-weight:700">✓ ${comm} committed</span>`:''}
+        ${plan>0?`<span style="background:#fef3c7;color:#92400e;padding:2px 10px;border-radius:20px;font-size:11px;font-weight:700">⏳ ${plan} planned</span>`:''}
+        ${!comm&&!plan?`<span style="color:#d1d5db;font-size:11px">No resources yet</span>`:''}
+        ${ce?`<button class="btn danger sm" style="margin-left:4px" onclick="event.stopPropagation();deleteProject(${p.id})">🗑</button>`:''}
+      </div>
+    </div>`;
+  }).join('')
+  : r==='Project Manager'
+    ? `<div class="empty" style="padding:24px 0"><span class="empty-icon">💼</span>No projects assigned to you yet.</div>`
+    : `<div class="empty" style="padding:24px 0"><span class="empty-icon">💼</span>No projects yet.</div>`;
+
+  return `<div class="card">
+    <div class="card-hdr"><span class="card-title">💼 Projects</span></div>
+    <div class="card-body">
+      ${ce?`<div class="ibox">
+        <div class="sec-title">Add project</div>
+        <div class="frow">
+          <div class="fg"><label class="lbl">Project name</label><input class="inp" placeholder="e.g. Platform Renewal" value="${state.pName}" oninput="state.pName=this.value" onkeydown="if(event.key==='Enter')addProject()" /></div>
+          <div class="fg"><label class="lbl">Project manager</label>${peopleSelectOptional('add-pm',state.pPm,'state.pPm=this.value','')}</div>
+          <div class="fg"><label class="lbl">Start date</label><input class="inp" type="date" value="${state.pStart}" oninput="state.pStart=this.value" /></div>
+          <div class="fg"><label class="lbl">End date</label><input class="inp" type="date" value="${state.pEnd}" oninput="state.pEnd=this.value" /></div>
+          <div class="fg" style="grid-column:1/-1"><label class="lbl">Description <span style="color:#9ca3af;font-weight:400">(optional)</span></label><textarea class="inp" rows="2" style="resize:vertical" oninput="state.pDesc=this.value">${state.pDesc}</textarea></div>
+          <div style="padding-top:4px"><button class="btn primary" onclick="addProject()">＋ Add project</button></div>
+        </div>
+      </div>`:''}
+      ${list}
+    </div>
+  </div>`;
 }
 
-function getTeamlead(name){
-  const m=state.teamMembers.find(m=>m.name===name);
-  if(m&&m.teamlead) return m.teamlead;
-  const team=m?.team||state.assignments.find(a=>a.name===name)?.team;
-  return team&&state.teamConfig[team]?state.teamConfig[team].teamlead:'';
-}
-function getManager(name){
-  const m=state.teamMembers.find(m=>m.name===name);
-  if(m&&m.manager) return m.manager;
-  const team=m?.team||state.assignments.find(a=>a.name===name)?.team;
-  return team&&state.teamConfig[team]?state.teamConfig[team].manager:'';
-}
-
-function openTeam(teamName){
-  if(role()==='Team Member') return;
-  state.selectedTeam=teamName; state.tab='team-detail';
-  document.getElementById('tab-title').textContent=teamName+' Team';
-  document.querySelectorAll('.nav-item').forEach(el=>el.classList.remove('active'));
-  const idMap={'Development':'nav-dev','Platform':'nav-plat','PMO':'nav-pmo'};
-  if(idMap[teamName]) document.getElementById(idMap[teamName])?.classList.add('active');
-  render();
-}
-
-function isPmProject(proj){ return proj.projectManager&&proj.projectManager.trim().toLowerCase()===userName().trim().toLowerCase(); }
-function toggleEditProject(id){ const panel=document.getElementById('edit-proj-panel'); if(panel) panel.style.display=panel.style.display==='none'?'block':'none'; }
-
-function saveProjectEdits(id){
-  const name=document.getElementById('ep-name')?.value.trim(), pm=document.getElementById('ep-pm')?.value||'',
-    start=document.getElementById('ep-start')?.value, end=document.getElementById('ep-end')?.value,
-    desc=document.getElementById('ep-desc')?.value.trim();
-  if(!name) return;
-  const oldProj=state.projects.find(p=>p.id===id);
-  if(oldProj&&oldProj.name!==name) state.assignments.forEach(a=>{ if(a.workName===oldProj.name&&a.type==='Project') a.workName=name; });
-  state.projects=state.projects.map(p=>p.id===id?{...p,name,projectManager:pm,startDate:start,endDate:end,description:desc}:p);
-  flashMsg('Project updated!',true); render();
-}
-
-function addResourceToProject(){
-  const proj=state.projects.find(p=>p.id===state.selectedProject);
-  if(!proj) return;
-  if(!state.prName.trim()||!state.prSkill.trim()){ flashMsg('Please fill in name and skillset.',false); return; }
-  const period={id:Date.now(),startWeek:state.prStart,endWeek:state.prEnd,allocationPercent:state.prPct};
-  const ei=state.assignments.findIndex(a=>a.name.trim().toLowerCase()===state.prName.trim().toLowerCase()&&a.type==='Project'&&a.workName===proj.name);
-  if(ei>=0){ state.assignments[ei].periods.push(period); state.assignments[ei].committed=false; state.assignments[ei].committedBy=null; }
-  else state.assignments.push({id:Date.now(),name:state.prName.trim(),team:state.prTeam,country:state.prCountry,skillset:state.prSkill.trim(),level:state.prLevel,type:'Project',workName:proj.name,projectId:proj.id,periods:[period],confirmed:false,confirmedBy:null,committed:false,committedBy:null});
-  state.prName=''; state.prSkill=''; state.prStart=1; state.prEnd=4; state.prPct=80;
-  flashMsg('Resource added!',true);
-}
-
+// ── renderProjectDetail ───────────────────────────────────────────────────────
 function renderProjectDetail(){
-  const proj=state.projects.find(p=>p.id===state.selectedProject);
+  const proj = state.projects.find(p => p.id===state.selectedProject);
   if(!proj) return `<div class="card"><div class="empty"><span class="empty-icon">💼</span>Project not found.</div></div>`;
-  const r=role(), ce=canEdit();
-  if(r==='Project Manager'&&!isPmProject(proj)) return `<div class="card"><div class="empty"><span class="empty-icon">🔒</span>You do not have access to this project.</div></div>`;
-  const allAssignments=state.assignments.filter(a=>a.workName===proj.name);
-  const visAssignments=allAssignments.filter(a=>{ if(r==='Team Member') return a.committed&&a.name.trim().toLowerCase()===userName().trim().toLowerCase(); return true; });
-  const planned=visAssignments.filter(a=>!a.committed), committed=visAssignments.filter(a=>a.committed);
-  function displayName(a){ return r==='Project Manager'?(a.committed?a.name:`${a.skillset} (${a.level})`):a.name; }
+  const r = role(), ce = canEdit();
+
+  if(r==='Project Manager'&&!isPmProject(proj))
+    return `<div class="card"><div class="empty"><span class="empty-icon">🔒</span>You do not have access to this project.</div></div>`;
+
+  const allA = state.assignments.filter(a => a.workName===proj.name);
+  const visA = allA.filter(a => {
+    if(r==='Team Member') return a.committed && a.name.trim().toLowerCase()===userName().trim().toLowerCase();
+    return true;
+  });
+  const planned   = visA.filter(a=>!a.committed);
+  const committed = visA.filter(a=>a.committed);
+
+  function dispName(a){ return r==='Project Manager' ? (a.committed?a.name:`${a.skillset} (${a.level})`) : a.name; }
+
   function resourceCard(a){
-    const realIdx=state.assignments.indexOf(a), showName=displayName(a);
-    const totalWeeks=a.periods.reduce((s,p)=>s+(p.endWeek-p.startWeek+1),0);
-    const avgAlloc=a.periods.length?Math.round(a.periods.reduce((s,p)=>s+p.allocationPercent,0)/a.periods.length):0;
-    return `<div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:10px;padding:14px 16px;margin-bottom:10px"><div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px"><div style="flex:1"><div style="font-size:14px;font-weight:700;color:#111827;margin-bottom:3px">${showName}</div><div style="font-size:12px;color:#6b7280;margin-bottom:8px">${a.team} · ${a.country} · ${a.skillset} · ${a.level}</div><div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px">${a.periods.map(p=>`<span class="ptag">W${p.startWeek}–${p.endWeek}: ${p.allocationPercent}%</span>`).join('')}</div><div style="font-size:11px;color:#9ca3af">${totalWeeks} week${totalWeeks!==1?'s':''} · avg ${avgAlloc}% allocation</div></div><div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px;flex-shrink:0">${a.committed?`<span class="badge b-committed">✓ Committed</span><div style="font-size:10px;color:#9ca3af;margin-top:2px">by ${a.committedBy}</div>${ce?`<button class="btn danger sm" style="font-size:10px;padding:2px 6px;margin-top:4px" onclick="uncommitA(${realIdx})">↩ Uncommit</button>`:''}`:`<span class="badge b-plan">Planned</span>${ce?`<button class="btn primary sm" style="margin-top:6px" onclick="commitA(${realIdx})">🔒 Commit</button>`:'<div style="font-size:11px;color:#9ca3af;margin-top:4px">Awaiting commit</div>'}`}${ce?`<button class="btn danger sm" onclick="delAssignment(${realIdx})">🗑 Remove</button>`:''}</div></div></div>`;
+    const idx = state.assignments.indexOf(a);
+    const totalW = a.periods.reduce((s,p)=>s+(p.endWeek-p.startWeek+1),0);
+    const avgAlloc = a.periods.length ? Math.round(a.periods.reduce((s,p)=>s+p.allocationPercent,0)/a.periods.length) : 0;
+    return `<div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:10px;padding:14px 16px;margin-bottom:10px">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px">
+        <div style="flex:1">
+          <div style="font-size:14px;font-weight:700;margin-bottom:3px">${dispName(a)}</div>
+          <div style="font-size:12px;color:#6b7280;margin-bottom:8px">${a.team} · ${a.country} · ${a.skillset} · ${a.level}</div>
+          <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px">${a.periods.map(p=>`<span class="ptag">W${p.startWeek}–${p.endWeek}: ${p.allocationPercent}%</span>`).join('')}</div>
+          <div style="font-size:11px;color:#9ca3af">${totalW} week${totalW!==1?'s':''} · avg ${avgAlloc}%</div>
+        </div>
+        <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px;flex-shrink:0">
+          ${a.committed
+            ? `<span class="badge b-committed">✓ Committed</span><div style="font-size:10px;color:#9ca3af;margin-top:2px">by ${a.committedBy}</div>${ce?`<button class="btn danger sm" style="font-size:10px;padding:2px 6px;margin-top:4px" onclick="uncommitA(${idx})">↩ Uncommit</button>`:''}`
+            : `<span class="badge b-plan">Planned</span>${ce?`<button class="btn primary sm" style="margin-top:6px" onclick="commitA(${idx})">🔒 Commit</button>`:'<div style="font-size:11px;color:#9ca3af;margin-top:4px">Awaiting commit</div>'}`}
+          ${ce?`<button class="btn danger sm" onclick="delAssignment(${idx})">🗑 Remove</button>`:''}
+        </div>
+      </div>
+    </div>`;
   }
+
+  const wks = visibleWeeks();
+
   return `
     <div style="margin-bottom:12px"><button class="btn sm" onclick="setTab('projects')">← Back to Projects</button></div>
     <div class="card" style="margin-bottom:16px">
@@ -499,23 +1238,33 @@ function renderProjectDetail(){
           ${proj.projectManager?`<span style="font-size:12px;color:#6b7280">PM: <strong>${proj.projectManager}</strong></span>`:''}
           <span style="color:#b45309;font-weight:600;font-size:12px">${planned.length} planned</span>
           <span style="color:#0f6e56;font-weight:600;font-size:12px">${committed.length} committed</span>
-          ${ce?`<button class="btn sm" onclick="toggleEditProject(${proj.id})">✏ Edit details</button>`:''}
-          ${ce?`<button class="btn danger sm" onclick="if(confirm('Delete project and all its planning?')){state.projects=state.projects.filter(p=>p.id!==${proj.id});state.assignments=state.assignments.filter(a=>a.workName!=='${proj.name}');setTab('projects')}">🗑 Delete project</button>`:''}
+          ${ce?`<button class="btn sm" onclick="toggleEditProject()">✏ Edit</button>`:''}
+          ${ce?`<button class="btn danger sm" onclick="if(confirm('Delete project and all its planning?')){state.projects=state.projects.filter(p=>p.id!==${proj.id});state.assignments=state.assignments.filter(a=>a.workName!=='${proj.name.replace(/'/g,"\\'")}');setTab('projects')}">🗑 Delete</button>`:''}
         </div>
         ${proj.description?`<div style="padding:10px 18px;font-size:13px;color:#374151;border-top:1px solid #f3f4f6;background:#fafafa;line-height:1.6">${proj.description}</div>`:''}
       </div>
-      ${ce?`<div id="edit-proj-panel" style="display:none;padding:16px;border-top:1px solid #e5e7eb;background:#f9fafb"><div class="fgrid"><div class="fg"><label class="lbl">Project name</label><input class="inp" id="ep-name" value="${proj.name}" /></div><div class="fg"><label class="lbl">Project manager</label>${peopleSelectOptional('ep-pm',proj.projectManager||'','document._epPm=this.value','')}</div><div class="fg"><label class="lbl">Start date</label><input class="inp" type="date" id="ep-start" value="${proj.startDate||''}" /></div><div class="fg"><label class="lbl">End date</label><input class="inp" type="date" id="ep-end" value="${proj.endDate||''}" /></div><div class="fg" style="grid-column:1/-1"><label class="lbl">Description</label><textarea class="inp" id="ep-desc" rows="2" style="resize:vertical">${proj.description||''}</textarea></div><div class="fg" style="justify-content:flex-end;padding-top:4px"><button class="btn primary" onclick="saveProjectEdits(${proj.id})">Save changes</button></div></div></div>`:''}
+      ${ce?`<div id="edit-proj-panel" style="display:none;padding:16px;border-top:1px solid #e5e7eb;background:#f9fafb">
+        <div class="fgrid">
+          <div class="fg"><label class="lbl">Project name</label><input class="inp" id="ep-name" value="${proj.name}" /></div>
+          <div class="fg"><label class="lbl">Project manager</label>${peopleSelectOptional('ep-pm',proj.projectManager||'','document._epPm=this.value','')}</div>
+          <div class="fg"><label class="lbl">Start date</label><input class="inp" type="date" id="ep-start" value="${proj.startDate||''}" /></div>
+          <div class="fg"><label class="lbl">End date</label><input class="inp" type="date" id="ep-end" value="${proj.endDate||''}" /></div>
+          <div class="fg" style="grid-column:1/-1"><label class="lbl">Description</label><textarea class="inp" id="ep-desc" rows="2" style="resize:vertical">${proj.description||''}</textarea></div>
+          <div class="fg" style="justify-content:flex-end;padding-top:4px"><button class="btn primary" onclick="saveProjectEdits(${proj.id})">Save changes</button></div>
+        </div>
+      </div>`:''}
     </div>
-    ${(ce||(role()==='Project Manager'&&isPmProject(proj)))?`
+
+    ${(ce||(r==='Project Manager'&&isPmProject(proj)))?`
     <div class="card" style="margin-bottom:16px">
       <div class="card-hdr"><span class="card-title">＋ Add resource to project</span></div>
       <div class="card-body" style="display:flex;flex-direction:column;gap:16px">
         <div class="fgrid">
-          ${role()!=='Project Manager'?`<div class="fg"><label class="lbl">Full name *</label>${peopleSelect('inp-prName',state.prName,"onPersonInput(this.value,'pr');clearTimeout(_debounceTimer);render()",'')}</div>`:''}
-          <div class="fg"><label class="lbl">Team</label><select class="sel" onchange="state.prTeam=this.value"><option${state.prTeam==='Development'?' selected':''}>Development</option><option${state.prTeam==='Platform'?' selected':''}>Platform</option><option${state.prTeam==='PMO'?' selected':''}>PMO</option></select></div>
+          ${r!=='Project Manager'?`<div class="fg"><label class="lbl">Full name *</label>${peopleSelect('inp-prName',state.prName,"onPersonInput(this.value,'pr');clearTimeout(_debounceTimer);render()",'')}</div>`:''}
+          <div class="fg"><label class="lbl">Team</label><select class="sel" onchange="state.prTeam=this.value">${TEAMS.map(t=>`<option${state.prTeam===t?' selected':''}>${t}</option>`).join('')}</select></div>
           <div class="fg"><label class="lbl">Country</label><select class="sel" onchange="state.prCountry=this.value"><option value="Sweden"${state.prCountry==='Sweden'?' selected':''}>Sweden</option><option value="Poland"${state.prCountry==='Poland'?' selected':''}>Poland</option></select></div>
           <div class="fg"><label class="lbl">Skillset *</label><input class="inp" placeholder="e.g. React, DevOps" value="${state.prSkill}" oninput="state.prSkill=this.value" /></div>
-          <div class="fg"><label class="lbl">Level</label><select class="sel" onchange="state.prLevel=this.value"><option${state.prLevel==='Junior'?' selected':''}>Junior</option><option${state.prLevel==='Mid'?' selected':''}>Mid</option><option${state.prLevel==='Senior'?' selected':''}>Senior</option></select></div>
+          <div class="fg"><label class="lbl">Level</label><select class="sel" onchange="state.prLevel=this.value">${['Junior','Mid','Senior'].map(l=>`<option${state.prLevel===l?' selected':''}>${l}</option>`).join('')}</select></div>
         </div>
         <div class="frow">
           <div class="fg"><label class="lbl">From week</label><input class="inp narrow" type="number" min="1" max="52" value="${state.prStart}" oninput="state.prStart=+this.value" /></div>
@@ -526,99 +1275,318 @@ function renderProjectDetail(){
         </div>
       </div>
     </div>`:''}
+
     <div class="card">
-      <div class="card-hdr"><span class="card-title">📅 Weekly allocation</span><div style="display:flex;align-items:center;gap:12px">${weekRangeToggle()}<span class="card-sub">Green row = person total · White rows = per-period breakdown</span></div></div>
-      ${visAssignments.length===0?`<div class="empty"><span class="empty-icon">👤</span>No resources assigned yet. Add one above!</div>`:`<div class="tbl-wrap"><table>
+      <div class="card-hdr">
+        <span class="card-title">📅 Weekly allocation</span>
+        <div style="display:flex;align-items:center;gap:12px">${weekRangeToggle()}<span class="card-sub">Green = person total · White = per-period</span></div>
+      </div>
+      ${!visA.length ? `<div class="empty"><span class="empty-icon">👤</span>No resources assigned yet.</div>` : `
+      <div class="tbl-wrap"><table>
         <thead><tr>
           <th>Resource</th><th>Skill</th><th>Level</th><th>Country</th><th>Status</th>
-          ${visibleWeeks().map(w=>wkHdr(w)).join('')}
+          ${wks.map(w=>wkHdr(w)).join('')}
           ${ce?'<th></th>':''}
         </tr></thead>
-        <tbody>${visAssignments.map(a=>{
-          const realIdx=state.assignments.indexOf(a);
-          const rawName=a.name&&a.name.startsWith('__pm_planned__')?'No name':a.name;
-          const showName=r==='Project Manager'?(a.committed?rawName:'No name'):rawName;
-          const statusBadge=a.committed?`<span class="badge b-committed" style="white-space:nowrap">✓ Committed</span><div style="font-size:10px;color:#9ca3af;margin-bottom:4px">${a.committedBy}</div>${ce?`<button class="btn danger sm" style="font-size:10px;padding:2px 6px" onclick="uncommitA(${realIdx})">↩ Uncommit</button>`:''}`:`<span class="badge b-plan">Planned</span>${ce?`<div style="margin-top:4px"><button class="btn primary sm" onclick="commitA(${realIdx})">🔒 Commit</button></div>`:''}`;
-          const weekCells=visibleWeeks().map(w=>wkCell(w,getAlloc(a,w))).join('');
-          const periodRows=a.periods.map((p,pi)=>{
-            const pWeeks=visibleWeeks().map(w=>{ const inRange=w>=p.startWeek&&w<=p.endWeek; return `<td class="wk" style="font-size:10px;${inRange?'background:rgba(29,158,117,0.08);color:#0f6e56':''}">${inRange?p.allocationPercent+'%':''}</td>`; }).join('');
-            return `<tr style="background:#fafafa"><td colspan="5" style="padding:4px 12px 4px 28px;font-size:11px;color:#6b7280">Period ${pi+1}: W${p.startWeek}–${p.endWeek} · ${p.allocationPercent}%  ${ce?`<button class="btn danger sm" style="padding:2px 6px;font-size:10px" onclick="delPeriod(${realIdx},${pi})">🗑</button>`:''}</td>${pWeeks}${ce?'<td></td>':''}</tr>`;
+        <tbody>${visA.map(a => {
+          const idx = state.assignments.indexOf(a);
+          const rawN = a.name&&a.name.startsWith('__pm_planned__') ? 'No name' : a.name;
+          const showN = r==='Project Manager' ? (a.committed?rawN:'No name') : rawN;
+          const statusBadge = a.committed
+            ? `<span class="badge b-committed" style="white-space:nowrap">✓ Committed</span><div style="font-size:10px;color:#9ca3af;margin-bottom:4px">${a.committedBy}</div>${ce?`<button class="btn danger sm" style="font-size:10px;padding:2px 6px" onclick="uncommitA(${idx})">↩ Uncommit</button>`:''}`
+            : `<span class="badge b-plan">Planned</span>${ce?`<div style="margin-top:4px"><button class="btn primary sm" onclick="commitA(${idx})">🔒 Commit</button></div>`:''}`;
+          const weekCells = wks.map(w => wkCell(w, getAlloc(a,w))).join('');
+          const periodRows = a.periods.map((p,pi) => {
+            const pW = wks.map(w => {
+              const inR = w>=p.startWeek&&w<=p.endWeek;
+              return `<td class="wk" style="font-size:10px;${inR?'background:rgba(29,158,117,0.08);color:#0f6e56':''}">${inR?p.allocationPercent+'%':''}</td>`;
+            }).join('');
+            return `<tr style="background:#fafafa">
+              <td colspan="5" style="padding:4px 12px 4px 28px;font-size:11px;color:#6b7280">Period ${pi+1}: W${p.startWeek}–${p.endWeek} · ${p.allocationPercent}%  ${ce?`<button class="btn danger sm" style="padding:2px 6px;font-size:10px" onclick="delPeriod(${idx},${pi})">🗑</button>`:''}</td>
+              ${pW}${ce?'<td></td>':''}
+            </tr>`;
           }).join('');
           return `<tr style="background:var(--green-bg);border-top:2px solid #e5e7eb">
-            <td style="padding:10px 12px;font-size:13px;font-weight:700">${showName}</td>
+            <td style="padding:10px 12px;font-size:13px;font-weight:700">${showN}</td>
             <td style="padding:10px 12px;font-size:12px;color:#6b7280">${a.skillset}</td>
             <td style="padding:10px 12px;font-size:12px;color:#6b7280">${a.level}</td>
             <td style="padding:10px 12px;font-size:12px;color:#6b7280">${a.country}</td>
             <td style="padding:10px 12px">${statusBadge}</td>
             ${weekCells}
-            ${ce?`<td style="padding:10px 8px;white-space:nowrap"><button class="btn danger sm" onclick="delAssignment(${realIdx})">🗑 Remove</button></td>`:''}
+            ${ce?`<td style="padding:10px 8px"><button class="btn danger sm" onclick="delAssignment(${idx})">🗑 Remove</button></td>`:''}
           </tr>${periodRows}`;
-        }).join('')}</tbody></table></div>`}
+        }).join('')}</tbody>
+      </table></div>`}
     </div>`;
 }
 
-function startEditMember(id){
-  if(!canEdit()) return;
-  if(state.editingMemberId===id){ state.editingMemberId=null; render(); return; }
-  const member=state.teamMembers.find(m=>m.id===id); if(!member) return;
-  state.editingMemberId=id; state.emName=member.name; state.emCountry=member.country;
-  state.emSkill=member.skillset; state.emLevel=member.level;
-  state.emTeamlead=member.teamlead||''; state.emManager=member.manager||'';
-  render();
-}
-function saveMemberEdit(id){
-  if(!state.emName.trim()) return;
-  const oldMember=state.teamMembers.find(m=>m.id===id), oldName=oldMember?.name;
-  state.teamMembers=state.teamMembers.map(m=>m.id===id?{...m,name:state.emName.trim(),country:state.emCountry,skillset:state.emSkill.trim(),level:state.emLevel,teamlead:state.emTeamlead||'',manager:state.emManager||''}:m);
-  const matchName=(state.emName.trim()||oldName||'').trim().toLowerCase(), oldNameLower=(oldName||'').trim().toLowerCase();
-  state.assignments=state.assignments.map(a=>{ const aName=a.name.trim().toLowerCase(); if(aName===oldNameLower||aName===matchName) return {...a,name:state.emName.trim()||a.name,country:state.emCountry||a.country,skillset:state.emSkill.trim()||a.skillset,level:state.emLevel||a.level}; return a; });
-  state.editingMemberId=null; flashMsg('Member updated!',true);
-}
-function saveMemberEditFromInputs(id){
-  const nameEl=document.getElementById('em-name-'+id), skillEl=document.getElementById('em-skill-'+id),
-    tlEl=document.getElementById('em-tl-'+id), mgrEl=document.getElementById('em-mgr-'+id);
-  const nameVal=nameEl?.value.trim()||state.emName.trim(), skillVal=skillEl?.value.trim()||state.emSkill.trim();
-  if(!nameVal) return;
-  state.emName=nameVal; state.emSkill=skillVal;
-  state.emTeamlead=tlEl?.value.trim()||''; state.emManager=mgrEl?.value.trim()||'';
-  saveMemberEdit(id);
+// ── renderTeamDetail ──────────────────────────────────────────────────────────
+function renderTeamDetail(){
+  const teamName = state.selectedTeam, r = role(), ce = canEdit();
+
+  // Auto-register anyone in planning but not yet a member
+  visibleAssignments().filter(a=>a.team===teamName).forEach(a => {
+    const key = a.name.trim().toLowerCase();
+    if(!state.teamMembers.some(m=>m.name.trim().toLowerCase()===key&&m.team===teamName))
+      state.teamMembers.push({id:Date.now()+Math.random(), name:a.name.trim(), team:teamName,
+        country:a.country, skillset:a.skillset, level:a.level});
+  });
+
+  const peopleMap = new Map();
+  state.teamMembers.filter(m=>m.team===teamName).forEach(m => {
+    peopleMap.set(m.name.trim().toLowerCase(), {id:m.id, name:m.name, team:m.team,
+      country:m.country, skillset:m.skillset, level:m.level, assignments:[], registered:true});
+  });
+  visibleAssignments().filter(a=>a.team===teamName).forEach(a => {
+    const key = a.name.trim().toLowerCase();
+    if(peopleMap.has(key) && !peopleMap.get(key).assignments.find(x=>x.id===a.id))
+      peopleMap.get(key).assignments.push(a);
+  });
+  const people = [...peopleMap.values()];
+  const totalCommitted = people.reduce((s,p)=>s+p.assignments.filter(a=>a.committed).length, 0);
+  const totalPlanned   = people.reduce((s,p)=>s+p.assignments.filter(a=>!a.committed).length, 0);
+
+  function ptw(person, w){ return person.assignments.reduce((s,a)=>s+getAlloc(a,w),0); }
+  function wCls(t){ return t>100?'ao':t===100?'af':t>0?'ap':''; }
+
+  const wks = visibleWeeks();
+
+  function assignmentRows(person){
+    if(!person.assignments.length)
+      return `<tr><td colspan="${6+wks.length}" style="padding:6px 12px;font-size:11px;color:#9ca3af;font-style:italic">No assignments yet</td></tr>`;
+    return person.assignments.map(a => {
+      const label = r==='Project Manager'&&!a.committed ? '— Planned —' : a.workName;
+      const idx   = state.assignments.indexOf(a);
+      const dot   = a.committed
+        ? `<span style="background:#d1fae5;color:#065f46;padding:1px 7px;border-radius:20px;font-size:10px;font-weight:700;white-space:nowrap">✓ Committed</span>${ce?`<button class="btn danger sm" style="font-size:10px;padding:1px 6px;margin-left:4px" onclick="uncommitA(${idx})">↩</button>`:''}`
+        : `<span style="background:#fef3c7;color:#92400e;padding:1px 7px;border-radius:20px;font-size:10px;font-weight:700;white-space:nowrap">⏳ Planned</span>${ce?`<button class="btn primary sm" style="font-size:10px;padding:1px 6px;margin-left:4px" onclick="commitA(${idx})">🔒 Commit</button>`:''}`;
+      const wCells = wks.map(w=>{ const al=getAlloc(a,w); return `<td class="wk ${wCls(al)}" style="font-size:10px">${al>0?al+'%':''}</td>`; }).join('');
+      return `<tr style="background:#fafafa">
+        <td style="padding:5px 12px 5px 28px;font-size:12px;color:#374151;white-space:nowrap">${label}</td>
+        <td style="padding:5px 12px;font-size:11px;color:#9ca3af">${a.type}</td>
+        <td colspan="3" style="padding:5px 12px;white-space:nowrap">${dot}</td>
+        <td style="padding:5px 12px"></td>
+        ${wCells}${ce?`<td style="padding:5px 8px"></td>`:''}</tr>`;
+    }).join('');
+  }
+
+  const totals = WEEKS.map(w => people.reduce((s,p)=>s+ptw(p,w),0)); // unused but kept for future
+  const memberRows = people.map(person => {
+    const allT   = WEEKS.map(w=>ptw(person,w));
+    const wCells = wks.map(w=>{ const t=allT[WEEKS.indexOf(w)]; return `<td class="wk ${wCls(t)}" style="font-weight:700">${t>0?t+'%':'–'}</td>`; }).join('');
+    const mbadge = person.registered
+      ? `<span style="background:#e0f2fe;color:#075985;font-size:10px;font-weight:700;padding:1px 6px;border-radius:20px;margin-left:6px">Member</span>`
+      : `<span style="background:#f3f4f6;color:#6b7280;font-size:10px;font-weight:700;padding:1px 6px;border-radius:20px;margin-left:6px">Planning</span>`;
+    const isEditing = ce && person.registered && state.editingMemberId===person.id;
+    const editRow = isEditing ? `<tr style="background:var(--green-bg)"><td colspan="${6+wks.length}" style="padding:0">
+      <div class="edit-member-panel">
+        <div style="font-size:11px;font-weight:700;color:#0f6e56;margin-bottom:12px;text-transform:uppercase;letter-spacing:.05em">✏ Editing: ${person.name}</div>
+        <div class="fgrid">
+          <div class="fg"><label class="lbl">Full name</label><input class="inp" id="em-name-${person.id}" placeholder="${state.emName}" oninput="state.emName=this.value" /></div>
+          <div class="fg"><label class="lbl">Country</label><select class="sel" onchange="state.emCountry=this.value"><option value="Sweden"${state.emCountry==='Sweden'?' selected':''}>Sweden</option><option value="Poland"${state.emCountry==='Poland'?' selected':''}>Poland</option></select></div>
+          <div class="fg"><label class="lbl">Skillset</label><input class="inp" id="em-skill-${person.id}" placeholder="${state.emSkill}" oninput="state.emSkill=this.value" /></div>
+          <div class="fg"><label class="lbl">Level</label><select class="sel" onchange="state.emLevel=this.value">${['Junior','Mid','Senior'].map(l=>`<option${state.emLevel===l?' selected':''}>${l}</option>`).join('')}</select></div>
+          <div class="fg"><label class="lbl">Teamlead</label><input class="inp" id="em-tl-${person.id}" placeholder="${state.emTeamlead||'inherit from team'}" list="people-list-optional" autocomplete="off" oninput="state.emTeamlead=this.value" /></div>
+          <div class="fg"><label class="lbl">Manager</label><input class="inp" id="em-mgr-${person.id}" placeholder="${state.emManager||'inherit from team'}" list="people-list-optional" autocomplete="off" oninput="state.emManager=this.value" /></div>
+          <div style="display:flex;gap:8px;padding-top:4px;align-items:flex-end;grid-column:1/-1">
+            <button class="btn primary sm" onclick="saveMemberEditFromInputs(${person.id})">✓ Save</button>
+            <button class="btn sm" onclick="state.editingMemberId=null;render()">✕ Cancel</button>
+            <button class="btn danger sm" onclick="removeTeamMember(${person.id})">🗑 Remove</button>
+          </div>
+        </div>
+      </div>
+    </td></tr>` : '';
+
+    return `<tr style="background:var(--green-bg);border-top:2px solid #e5e7eb">
+      <td style="padding:10px 12px;font-size:13px;font-weight:700;white-space:nowrap;${ce&&person.registered?'cursor:pointer':''}" ${ce&&person.registered?`onclick="startEditMember(${person.id})"`:''}>${person.name}${mbadge}</td>
+      <td style="padding:10px 12px;font-size:12px;color:#6b7280">${person.skillset}</td>
+      <td style="padding:10px 12px;font-size:12px;color:#6b7280">${person.level}</td>
+      <td style="padding:10px 12px;font-size:12px;color:#6b7280">${person.country}</td>
+      <td style="padding:10px 12px;font-size:12px;color:#6b7280">
+        ${getTeamlead(person.name)?`<div style="font-size:10px;color:#0f6e56;font-weight:700">TL: ${getTeamlead(person.name)}</div>`:''}
+        ${getManager(person.name)?`<div style="font-size:10px;color:#185fa5;font-weight:700">Mgr: ${getManager(person.name)}</div>`:''}
+        ${!getTeamlead(person.name)&&!getManager(person.name)?`<span style="color:#d1d5db;font-size:11px">–</span>`:''}
+      </td>
+      <td style="padding:10px 12px;font-size:12px;color:#6b7280">${person.assignments.length} asgmt${person.assignments.length!==1?'s':''}</td>
+      ${wCells}<td style="padding:10px 8px"></td>
+    </tr>${editRow}${assignmentRows(person)}`;
+  }).join('');
+
+  // Debt section
+  const svcsWithTarget = state.baseServices.filter(s=>s.team===teamName&&s.targetPct>0);
+  const debtSection = svcsWithTarget.length ? (()=>{
+    const td = calcTeamDebt(teamName);
+    return `<div class="card" style="margin-bottom:16px">
+      <div class="card-hdr"><span class="card-title">🔧 Technical debt — Base Services</span><span class="card-sub">Accumulated W1–W${CURRENT_WEEK-1}</span></div>
+      ${svcsWithTarget.map(s => {
+        const debt = calcSvcDebt(s);
+        const curAlloc = getSvcAlloc(s.name, CURRENT_WEEK);
+        const onTrack  = curAlloc >= s.targetPct;
+        const dc = debt.debtPct===0?'#0f6e56':debt.debtPct<s.targetPct*4?'#b45309':'#b91c1c';
+        const db = debt.debtPct===0?'#d1fae5':debt.debtPct<s.targetPct*4?'#fef3c7':'#fef2f2';
+        const barPct = s.targetPct*(CURRENT_WEEK-1)>0 ? Math.min(100,Math.round((debt.debtPct/(s.targetPct*(CURRENT_WEEK-1)))*100)) : 0;
+        return `<div style="padding:12px 18px;border-bottom:1px solid #f3f4f6">
+          <div style="display:flex;align-items:center;gap:12px">
+            <div style="flex:1">
+              <div style="font-size:13px;font-weight:600;color:#111827">${s.name}</div>
+              <div style="font-size:11px;color:#6b7280;margin-top:2px">Target <strong>${s.targetPct}%</strong> · Now <strong style="color:${onTrack?'#0f6e56':'#b91c1c'}">${curAlloc}%</strong> ${onTrack?'✓':('↓ '+(s.targetPct-curAlloc)+'% below target')}</div>
+              <div style="margin-top:6px;height:5px;background:#f3f4f6;border-radius:3px;overflow:hidden;max-width:300px">
+                <div style="height:100%;width:${barPct}%;background:${dc};border-radius:3px"></div>
+              </div>
+            </div>
+            <div style="text-align:right;flex-shrink:0">
+              <span style="background:${db};color:${dc};padding:2px 10px;border-radius:20px;font-size:12px;font-weight:700">${debt.debtPct===0?'✓ No debt':debt.debtPct+'%'}</span>
+              ${debt.debtPct>0?`<div style="font-size:10px;color:#9ca3af;margin-top:4px">= ${debt.debtWeeks} weeks fulltime</div>`:''}
+            </div>
+          </div>
+        </div>`;
+      }).join('')}
+      <div style="padding:10px 18px;background:#f9fafb;border-top:1px solid #f3f4f6;display:flex;align-items:center;justify-content:space-between">
+        <span style="font-size:12px;color:#6b7280">${svcsWithTarget.length} services tracked</span>
+        <span style="font-size:13px;font-weight:700;color:${td.debtPct===0?'#0f6e56':td.debtPct<400?'#b45309':'#b91c1c'}">Total: ${td.debtPct===0?'✓ No debt':td.debtPct+'% · '+td.debtWeeks+'w'}</span>
+      </div>
+    </div>`;
+  })() : '';
+
+  const cfg = state.teamConfig[teamName]||{};
+  return `
+    <div style="margin-bottom:12px"><button class="btn sm" onclick="setTab('overview')">← Back to Overview</button></div>
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-hdr">
+        <span class="card-title">👥 ${teamName} Team</span>
+        <div style="display:flex;gap:16px;font-size:12px;color:#6b7280">
+          <span><strong style="color:#111827">${people.length}</strong> member${people.length!==1?'s':''}</span>
+          <span><strong style="color:#0f6e56">${totalCommitted}</strong> committed</span>
+          <span><strong style="color:#b45309">${totalPlanned}</strong> planned</span>
+        </div>
+      </div>
+      <div style="padding:14px 18px;border-top:1px solid #f3f4f6;display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div><div class="org-label">Team Lead</div>${ce?`<div style="display:flex;align-items:center;gap:8px">${peopleSelectOptional('tc-tl-'+teamName,cfg.teamlead||'','saveTeamConfig(\''+teamName+'\',\'teamlead\',this.value)','flex:1;max-width:220px')}${cfg.teamlead?`<span style="font-size:11px;color:#0f6e56;font-weight:600">✓ ${cfg.teamlead}</span>`:'<span style="font-size:11px;color:#9ca3af">Not assigned</span>'}</div>`:`<div class="org-person">${cfg.teamlead||'<span style="color:#9ca3af;font-weight:400">Not assigned</span>'}</div>`}</div>
+        <div><div class="org-label">Manager</div>${ce?`<div style="display:flex;align-items:center;gap:8px">${peopleSelectOptional('tc-mgr-'+teamName,cfg.manager||'','saveTeamConfig(\''+teamName+'\',\'manager\',this.value)','flex:1;max-width:220px')}${cfg.manager?`<span style="font-size:11px;color:#185fa5;font-weight:600">✓ ${cfg.manager}</span>`:'<span style="font-size:11px;color:#9ca3af">Not assigned</span>'}</div>`:`<div class="org-person">${cfg.manager||'<span style="color:#9ca3af;font-weight:400">Not assigned</span>'}</div>`}</div>
+      </div>
+    </div>
+    ${debtSection}
+    ${ce?`<div class="card" style="margin-bottom:16px">
+      <div class="card-hdr"><span class="card-title">＋ Add team member</span></div>
+      <div class="card-body" style="display:flex;flex-direction:column;gap:14px">
+        <div style="display:grid;grid-template-columns:1.5fr 1fr 1.5fr 1fr auto;gap:12px;align-items:flex-end">
+          <div class="fg"><label class="lbl">Full name *</label><input class="inp" id="inp-tmName" list="people-list" placeholder="Type or pick a name…" autocomplete="off" oninput="onPersonInput(this.value,'tm')" /></div>
+          <div class="fg"><label class="lbl">Country</label><select class="sel" onchange="state.tmCountry=this.value"><option value="Sweden"${state.tmCountry==='Sweden'?' selected':''}>Sweden</option><option value="Poland"${state.tmCountry==='Poland'?' selected':''}>Poland</option></select></div>
+          <div class="fg"><label class="lbl">Skillset *</label><input class="inp" id="inp-tmSkill" placeholder="e.g. React, DevOps" oninput="state.tmSkill=this.value" onkeydown="if(event.key==='Enter')addTeamMember()" /></div>
+          <div class="fg"><label class="lbl">Level</label><select class="sel" onchange="state.tmLevel=this.value">${['Junior','Mid','Senior'].map(l=>`<option${state.tmLevel===l?' selected':''}>${l}</option>`).join('')}</select></div>
+          <button class="btn primary" onclick="addTeamMember()" style="white-space:nowrap">＋ Add member</button>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;padding:12px;background:#f9fafb;border-radius:8px;border:1px solid #f3f4f6">
+          <div class="fg"><label class="lbl">Teamlead override <span style="color:#9ca3af;font-weight:400">— blank = team default: <strong>${cfg.teamlead||'none set'}</strong></span></label><input class="inp" id="inp-tmTl" list="people-list-optional" placeholder="Blank = inherit from team" autocomplete="off" oninput="state.tmTeamlead=this.value" /></div>
+          <div class="fg"><label class="lbl">Manager override <span style="color:#9ca3af;font-weight:400">— blank = team default: <strong>${cfg.manager||'none set'}</strong></span></label><input class="inp" id="inp-tmMgr" list="people-list-optional" placeholder="Blank = inherit from team" autocomplete="off" oninput="state.tmManager=this.value" /></div>
+        </div>
+      </div>
+    </div>`:''}
+    <div class="card">
+      <div class="card-hdr">
+        <span class="card-title">📅 Weekly allocation</span>
+        <div style="display:flex;align-items:center;gap:12px">${weekRangeToggle()}<span class="card-sub">Green = person total · White = per-assignment</span></div>
+      </div>
+      ${!people.length ? `<div class="empty"><span class="empty-icon">👥</span>No team members in ${teamName} yet.</div>` : `
+      <div class="tbl-wrap"><table>
+        <thead><tr><th>Name</th><th>Skill</th><th>Level</th><th>Country</th><th>Reporting</th><th>Assignments</th>${wks.map(w=>wkHdr(w)).join('')}${ce?'<th></th>':''}</tr></thead>
+        <tbody>${memberRows}</tbody>
+      </table></div>`}
+    </div>`;
 }
 
-function addInboxItem(){
-  if(!state.iTitle.trim()) return;
-  state.inboxItems.push({id:Date.now(),title:state.iTitle.trim(),description:state.iDesc.trim(),priority:state.iPriority,status:'new',createdBy:userName(),createdAt:new Date().toLocaleDateString('en-SE'),convertedTo:null});
-  state.iTitle=''; state.iDesc=''; state.iPriority='Medium'; render();
-}
-function convertInboxItem(id,to){
-  const item=state.inboxItems.find(i=>i.id===id); if(!item) return;
-  if(to==='revert'){
-    if(item.convertedTo==='Project'){ const proj=state.projects.find(p=>p.name===item.title); if(proj&&confirm('This will also delete the project "'+item.title+'". Continue?')) state.projects=state.projects.filter(p=>p.name!==item.title); else if(!proj){} else return; }
-    item.status='new'; item.convertedTo=null; flashMsg('Reverted to inbox.',true); render(); return;
-  }
-  if(to==='project'){
-    if(item.convertedTo==='Internal Initiative'){ state.projects.push({id:Date.now(),name:item.title,projectManager:'',startDate:'',endDate:'',description:item.description}); item.convertedTo='Project'; flashMsg('Changed to project!',true); }
-    else { state.projects.push({id:Date.now(),name:item.title,projectManager:'',startDate:'',endDate:'',description:item.description}); item.status='converted'; item.convertedTo='Project'; flashMsg('Converted to project!',true); }
-  } else if(to==='initiative'){
-    if(item.convertedTo==='Project'){ const proj=state.projects.find(p=>p.name===item.title); if(proj) state.projects=state.projects.filter(p=>p.name!==item.title); }
-    item.status='converted'; item.convertedTo='Internal Initiative'; flashMsg('Changed to Internal Initiative!',true);
-  }
-  render();
-}
-function deleteInboxItem(id){ state.inboxItems=state.inboxItems.filter(i=>i.id!==id); render(); }
+// ── renderServices ────────────────────────────────────────────────────────────
+function renderServices(){
+  const ce = canEdit();
+  const groups = TEAMS.map(t => {
+    const svcs = state.baseServices.filter(s=>s.team===t);
+    const teamDebt = calcTeamDebt(t);
+    const hasTargets = svcs.some(s=>s.targetPct>0);
 
+    const svcRows = svcs.length ? svcs.map(s => {
+      const debt = calcSvcDebt(s), target = s.targetPct||0;
+      const curAlloc = getSvcAlloc(s.name, CURRENT_WEEK);
+      const onTrack  = !target || curAlloc>=target;
+      const dc = debt.debtPct===0?'#0f6e56':debt.debtPct<target*4?'#b45309':'#b91c1c';
+      const db = debt.debtPct===0?'#d1fae5':debt.debtPct<target*4?'#fef3c7':'#fef2f2';
+      return `<div style="background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:12px 14px;margin-bottom:8px">
+        <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+          <div style="flex:1;min-width:140px">
+            <div style="font-size:13px;font-weight:600;color:#111827">${s.name}</div>
+            ${target
+              ? `<div style="font-size:11px;color:#6b7280;margin-top:2px">Target: <strong>${target}%</strong> · Now: <strong style="color:${onTrack?'#0f6e56':'#b91c1c'}">${curAlloc}%</strong></div>`
+              : `<div style="font-size:11px;color:#9ca3af;margin-top:2px">No target set</div>`}
+          </div>
+          ${target?`<div style="text-align:right;flex-shrink:0">
+            <span style="background:${db};color:${dc};padding:2px 10px;border-radius:20px;font-size:11px;font-weight:700">${debt.debtPct===0?'✓ No debt':'⚠ '+debt.debtPct+'% debt'}</span>
+            ${debt.debtPct>0?`<div style="font-size:10px;color:#9ca3af;margin-top:3px">= ${debt.debtWeeks} weeks fulltime</div>`:''}
+          </div>`:''}
+          ${ce?`<div style="display:flex;align-items:center;gap:6px;flex-shrink:0">
+            <label style="font-size:10px;font-weight:700;color:#9ca3af;text-transform:uppercase;letter-spacing:.05em">Target %</label>
+            <input type="number" min="0" max="200" value="${target||''}" placeholder="0"
+              style="width:60px;padding:4px 6px;font-size:12px;border:1px solid #d1d5db;border-radius:6px;font-family:DM Mono,monospace;text-align:center"
+              oninput="setSvcTarget('${s.name.replace(/'/g,"\\'")}',this.value)" />
+            <button class="btn sm" onclick="editSvc('${s.name.replace(/'/g,"\\'")}')">✏</button>
+            <button class="btn danger sm" onclick="delSvc('${s.name.replace(/'/g,"\\'")}')">🗑</button>
+          </div>`:''}
+        </div>
+        ${target&&debt.debtPct>0?`<div style="margin-top:10px">
+          <div style="display:flex;justify-content:space-between;font-size:10px;color:#9ca3af;margin-bottom:3px">
+            <span>Accumulated debt W1–W${CURRENT_WEEK-1}</span><span>${debt.debtPct}% of one FTE</span>
+          </div>
+          <div style="height:6px;background:#f3f4f6;border-radius:3px;overflow:hidden">
+            <div style="height:100%;width:${Math.min(100,Math.round((debt.debtPct/(target*CURRENT_WEEK))*100))}%;background:${dc};border-radius:3px;transition:width .3s"></div>
+          </div>
+        </div>`:''}
+      </div>`;
+    }).join('') : `<div style="font-size:12px;color:#9ca3af;padding-bottom:6px">No services</div>`;
+
+    const teamBadge = hasTargets
+      ? teamDebt.debtPct===0
+        ? `<span style="background:#d1fae5;color:#065f46;font-size:11px;font-weight:700;padding:1px 8px;border-radius:20px">✓ No debt</span>`
+        : `<span style="background:#fef3c7;color:#92400e;font-size:11px;font-weight:700;padding:1px 8px;border-radius:20px">⚠ ${teamDebt.debtPct}% · ${teamDebt.debtWeeks}w</span>`
+      : '';
+
+    return `<div style="margin-bottom:20px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+        <div class="svc-grp-lbl" style="margin:0">${t}</div>${teamBadge}
+      </div>${svcRows}
+    </div>`;
+  }).join('');
+
+  return `<div class="card">
+    <div class="card-hdr"><span class="card-title">🔧 Base Services</span><span class="card-sub">Set a target % to track technical debt</span></div>
+    <div class="card-body">
+      ${ce?`<div class="ibox">
+        <div class="sec-title">Add base service</div>
+        <div class="frow">
+          <div class="fg"><label class="lbl">Team</label><select class="sel" style="width:140px" onchange="state.sTeam=this.value">${TEAMS.map(t=>`<option${state.sTeam===t?' selected':''}>${t}</option>`).join('')}</select></div>
+          <div class="fg" style="flex:1"><label class="lbl">Service name</label><input class="inp" placeholder="e.g. API Support" value="${state.sName}" oninput="state.sName=this.value" onkeydown="if(event.key==='Enter')addSvc()" /></div>
+          <div class="fg"><label class="lbl">Target %</label><input class="inp" type="number" min="0" max="200" placeholder="e.g. 10" value="${state.sTargetPct||''}" style="width:80px" oninput="state.sTargetPct=+this.value" /></div>
+          <button class="btn primary" onclick="addSvc()">＋ Add</button>
+        </div>
+      </div>`:''}
+      <div>${groups}</div>
+    </div>
+  </div>`;
+}
+
+// ── renderInbox ───────────────────────────────────────────────────────────────
 function renderInbox(){
   if(!canEdit()) return `<div class="card"><div class="locked">🔒<span>Only Teamlead and Manager can manage the inbox.</span></div></div>`;
-  const active=state.inboxItems.filter(i=>i.status==='new'), converted=state.inboxItems.filter(i=>i.status==='converted');
+  const active    = state.inboxItems.filter(i=>i.status==='new');
+  const converted = state.inboxItems.filter(i=>i.status==='converted');
+
   return `
     <div class="card" style="margin-bottom:16px">
-      <div class="card-hdr"><span class="card-title">📥 Inbox — New incoming items</span><span class="card-sub">Items not yet classified as project or initiative</span></div>
+      <div class="card-hdr"><span class="card-title">📥 Inbox</span><span class="card-sub">Items not yet classified as project or initiative</span></div>
       <div class="card-body">
         <div class="ibox">
           <div class="sec-title">Add new item</div>
           <div class="fgrid">
             <div class="fg" style="grid-column:1/-1"><label class="lbl">Title *</label><input class="inp" placeholder="What is this about?" value="${state.iTitle}" oninput="state.iTitle=this.value" /></div>
             <div class="fg" style="grid-column:1/-1"><label class="lbl">Description <span style="color:#9ca3af;font-weight:400">(optional)</span></label><textarea class="inp" rows="2" oninput="state.iDesc=this.value" style="resize:vertical">${state.iDesc}</textarea></div>
-            <div class="fg"><label class="lbl">Priority</label><select class="sel" onchange="state.iPriority=this.value"><option${state.iPriority==='High'?' selected':''}>High</option><option${state.iPriority==='Medium'?' selected':''}>Medium</option><option${state.iPriority==='Low'?' selected':''}>Low</option></select></div>
+            <div class="fg"><label class="lbl">Priority</label><select class="sel" onchange="state.iPriority=this.value">${['High','Medium','Low'].map(p=>`<option${state.iPriority===p?' selected':''}>${p}</option>`).join('')}</select></div>
             <div style="padding-top:18px"><button class="btn primary" onclick="addInboxItem()">＋ Add to inbox</button></div>
           </div>
         </div>
@@ -627,11 +1595,14 @@ function renderInbox(){
     <div class="card" style="margin-bottom:16px">
       <div class="card-hdr"><span class="card-title">🔍 Needs classification (${active.length})</span></div>
       <div class="card-body">
-        ${!active.length?`<div class="empty" style="padding:20px 0"><span class="empty-icon">✅</span>Inbox is empty.</div>`:active.map(item=>`
+        ${!active.length ? `<div class="empty" style="padding:20px 0"><span class="empty-icon">✅</span>Inbox is empty.</div>` : active.map(item => `
         <div class="inbox-card priority-${item.priority.toLowerCase()}">
           <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px">
             <div style="flex:1">
-              <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px"><span style="font-size:13px;font-weight:700;color:#111827">${item.title}</span><span style="background:${item.priority==='High'?'#fef2f2;color:#dc2626':item.priority==='Medium'?'#fffbeb;color:#b45309':'var(--green-bg);color:#0f6e56'};padding:1px 8px;border-radius:20px;font-size:10px;font-weight:700">${item.priority}</span></div>
+              <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+                <span style="font-size:13px;font-weight:700;color:#111827">${item.title}</span>
+                <span style="background:${item.priority==='High'?'#fef2f2;color:#dc2626':item.priority==='Medium'?'#fffbeb;color:#b45309':'var(--green-bg);color:#0f6e56'};padding:1px 8px;border-radius:20px;font-size:10px;font-weight:700">${item.priority}</span>
+              </div>
               ${item.description?`<div style="font-size:12px;color:#6b7280;margin-bottom:6px">${item.description}</div>`:''}
               <div style="font-size:11px;color:#9ca3af">Added by ${item.createdBy} · ${item.createdAt}</div>
             </div>
@@ -644,547 +1615,187 @@ function renderInbox(){
         </div>`).join('')}
       </div>
     </div>
-    ${converted.length?`<div class="card"><div class="card-hdr"><span class="card-title" style="color:#9ca3af">✓ Processed (${converted.length})</span></div><div class="card-body">${converted.map(item=>`<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid #f3f4f6;gap:12px"><div style="flex:1"><span style="font-size:13px;font-weight:600;color:#374151">${item.title}</span><span style="margin-left:8px;background:${item.convertedTo==='Project'?'#e0f2fe;color:#075985':'#ede9fe;color:#6d28d9'};padding:1px 8px;border-radius:20px;font-size:11px;font-weight:700">→ ${item.convertedTo}</span>${item.description?`<div style="font-size:11px;color:#9ca3af;margin-top:2px">${item.description}</div>`:''}</div><div style="display:flex;gap:6px;flex-shrink:0;flex-wrap:wrap;justify-content:flex-end">${item.convertedTo==='Project'?`<button class="btn sm" style="font-size:11px;border-color:#a78bfa;color:#7c3aed" onclick="convertInboxItem(${item.id},'initiative')">→ Change to initiative</button>`:`<button class="btn sm" style="font-size:11px;border-color:#0ea5e9;color:#0369a1" onclick="convertInboxItem(${item.id},'project')">→ Change to project</button>`}<button class="btn sm" style="font-size:11px" onclick="convertInboxItem(${item.id},'revert')">↩ Revert to inbox</button><button class="btn danger sm" onclick="deleteInboxItem(${item.id})">🗑</button></div></div>`).join('')}</div></div>`:''}
-  `;
+    ${converted.length?`<div class="card"><div class="card-hdr"><span class="card-title" style="color:#9ca3af">✓ Processed (${converted.length})</span></div><div class="card-body">
+      ${converted.map(item=>`<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid #f3f4f6;gap:12px">
+        <div style="flex:1">
+          <span style="font-size:13px;font-weight:600;color:#374151">${item.title}</span>
+          <span style="margin-left:8px;background:${item.convertedTo==='Project'?'#e0f2fe;color:#075985':'#ede9fe;color:#6d28d9'};padding:1px 8px;border-radius:20px;font-size:11px;font-weight:700">→ ${item.convertedTo}</span>
+          ${item.description?`<div style="font-size:11px;color:#9ca3af;margin-top:2px">${item.description}</div>`:''}
+        </div>
+        <div style="display:flex;gap:6px;flex-shrink:0;flex-wrap:wrap;justify-content:flex-end">
+          ${item.convertedTo==='Project'
+            ? `<button class="btn sm" style="font-size:11px;border-color:#a78bfa;color:#7c3aed" onclick="convertInboxItem(${item.id},'initiative')">→ Change to initiative</button>`
+            : `<button class="btn sm" style="font-size:11px;border-color:#0ea5e9;color:#0369a1" onclick="convertInboxItem(${item.id},'project')">→ Change to project</button>`}
+          <button class="btn sm" style="font-size:11px" onclick="convertInboxItem(${item.id},'revert')">↩ Revert</button>
+          <button class="btn danger sm" onclick="deleteInboxItem(${item.id})">🗑</button>
+        </div>
+      </div>`).join('')}
+    </div></div>`:''}`;
 }
 
+// ── renderPipeline ────────────────────────────────────────────────────────────
 function renderPipeline(){
-  const r=role(), planned=state.assignments.filter(a=>!a.committed);
+  const r = role(), ce = canEdit();
+  const planned = state.assignments.filter(a=>!a.committed);
   if(!planned.length) return `<div class="card"><div class="empty"><span class="empty-icon">⏳</span>No planned (uncommitted) assignments yet.</div></div>`;
-  const grouped=new Map();
-  planned.forEach(a=>{ if(!grouped.has(a.workName)) grouped.set(a.workName,[]); grouped.get(a.workName).push(a); });
-  const ce=canEdit();
-  return `
-    <div class="card" style="margin-bottom:16px"><div class="card-hdr"><span class="card-title">⏳ Pipeline — Planned but not committed</span><span class="card-sub">${planned.length} assignment${planned.length!==1?'s':''} across ${grouped.size} work item${grouped.size!==1?'s':''}</span></div></div>
-    ${[...grouped.entries()].map(([workName,items])=>{
-      const proj=state.projects.find(p=>p.name===workName);
-      return `<div class="card" style="margin-bottom:12px"><div class="card-hdr"><span class="card-title">${items[0].type==='Project'?'💼':'🔧'} ${workName}</span><div style="display:flex;gap:10px;align-items:center"><span class="badge b-type">${items[0].type}</span>${proj?`<span style="font-size:11px;color:#9ca3af">📅 ${proj.startDate||'—'} → ${proj.endDate||'—'}</span>`:''}<span style="font-size:11px;color:#b45309;font-weight:600">${items.length} resource${items.length!==1?'s':''} planned</span></div></div><div class="tbl-wrap"><table><thead><tr><th>Resource</th><th>Team</th><th>Skill</th><th>Level</th><th>Country</th><th>Periods</th><th>Total weeks</th>${ce?'<th>Action</th>':''}</tr></thead><tbody>${items.map(a=>{ const idx=state.assignments.indexOf(a); const _rn=a.name&&a.name.startsWith('__pm_planned__')?'No name':a.name; const displayName=r==='Project Manager'?(a.committed?_rn:'No name'):_rn; const totalWks=a.periods.reduce((s,p)=>s+(p.endWeek-p.startWeek+1),0); const periods=a.periods.map(p=>`<span class="ptag">W${p.startWeek}–${p.endWeek}: ${p.allocationPercent}%</span>`).join(' '); return `<tr><td style="background:${a.country==='Sweden'?'#dbeafe':'#fef3c7'}"><strong>${displayName}</strong></td><td>${a.team}</td><td>${a.skillset}</td><td>${a.level}</td><td>${a.country}</td><td>${periods}</td><td><strong style="font-family:'DM Mono',monospace">${totalWks}</strong> week${totalWks!==1?'s':''}</td>${ce?`<td style="white-space:nowrap"><button class="btn primary sm" onclick="commitA(${idx})">🔒 Commit</button><button class="btn danger sm" style="margin-top:4px" onclick="delAssignment(${idx})">🗑 Delete</button></td>`:''}</tr>`; }).join('')}</tbody></table></div></div>`;
-    }).join('')}
-  `;
-}
 
-function addTeamMember(){
-  const nameEl=document.getElementById('inp-tmName'), skillEl=document.getElementById('inp-tmSkill'),
-    tlEl=document.getElementById('inp-tmTl'), mgrEl=document.getElementById('inp-tmMgr');
-  if(nameEl?.value.trim()) state.tmName=nameEl.value.trim();
-  if(skillEl?.value.trim()) state.tmSkill=skillEl.value.trim();
-  if(tlEl?.value.trim()) state.tmTeamlead=tlEl.value.trim();
-  if(mgrEl?.value.trim()) state.tmManager=mgrEl.value.trim();
-  if(!state.tmName.trim()||!state.tmSkill.trim()) return;
-  const teamName=state.selectedTeam;
-  const exists=state.teamMembers.find(m=>m.name.trim().toLowerCase()===state.tmName.trim().toLowerCase()&&m.team===teamName);
-  if(exists){ flashMsg('This person is already in the team.',false); return; }
-  state.teamMembers.push({id:Date.now(),name:state.tmName.trim(),team:teamName,country:state.tmCountry,skillset:state.tmSkill.trim(),level:state.tmLevel,teamlead:state.tmTeamlead.trim(),manager:state.tmManager.trim()});
-  state.tmName=''; state.tmSkill=''; state.tmTeamlead=''; state.tmManager=''; render();
-}
-function removeTeamMember(id){ state.teamMembers=state.teamMembers.filter(m=>m.id!==id); render(); }
-
-function renderTeamDetail(){
-  const teamName=state.selectedTeam, r=role(), ce=canEdit();
-  visibleAssignments().filter(a=>a.team===teamName).forEach(a=>{
-    const key=a.name.trim().toLowerCase();
-    if(!state.teamMembers.some(m=>m.name.trim().toLowerCase()===key&&m.team===teamName))
-      state.teamMembers.push({id:Date.now()+Math.random(),name:a.name.trim(),team:teamName,country:a.country,skillset:a.skillset,level:a.level});
-  });
-  const peopleMap=new Map();
-  state.teamMembers.filter(m=>m.team===teamName).forEach(m=>{ const key=m.name.trim().toLowerCase(); if(!peopleMap.has(key)) peopleMap.set(key,{id:m.id,name:m.name,team:m.team,country:m.country,skillset:m.skillset,level:m.level,assignments:[],registered:true}); });
-  visibleAssignments().filter(a=>a.team===teamName).forEach(a=>{ const key=a.name.trim().toLowerCase(); if(peopleMap.has(key)&&!peopleMap.get(key).assignments.find(x=>x.id===a.id)) peopleMap.get(key).assignments.push(a); });
-  const people=[...peopleMap.values()];
-  const totalCommitted=people.reduce((s,p)=>s+p.assignments.filter(a=>a.committed).length,0);
-  const totalPlanned=people.reduce((s,p)=>s+p.assignments.filter(a=>!a.committed).length,0);
-  function getPersonTotalAlloc(person,w){ return person.assignments.reduce((s,a)=>s+getAlloc(a,w),0); }
-  function wCls(t){ return t>100?'ao':t===100?'af':t>0?'ap':''; }
-  function assignmentRows(person){
-    if(!person.assignments.length) return `<tr><td colspan="7" style="padding:6px 12px;font-size:11px;color:#9ca3af;font-style:italic">No assignments yet</td></tr>`;
-    return person.assignments.map(a=>{
-      const label=r==='Project Manager'&&!a.committed?'— Planned —':a.workName, idx=state.assignments.indexOf(a);
-      const statusDot=a.committed?`<span style="background:#d1fae5;color:#065f46;padding:1px 7px;border-radius:20px;font-size:10px;font-weight:700;white-space:nowrap">✓ Committed</span>${ce?`<button class="btn danger sm" style="font-size:10px;padding:1px 6px;margin-left:4px" onclick="uncommitA(${idx})">↩</button>`:''}`:`<span style="background:#fef3c7;color:#92400e;padding:1px 7px;border-radius:20px;font-size:10px;font-weight:700;white-space:nowrap">⏳ Planned</span>${ce?`<button class="btn primary sm" style="font-size:10px;padding:1px 6px;margin-left:4px" onclick="commitA(${idx})">🔒 Commit</button>`:''}`;
-      const weekCells=visibleWeeks().map(w=>{ const al=getAlloc(a,w); return `<td class="wk ${wCls(al)}" style="font-size:10px">${al>0?al+'%':''}</td>`; }).join('');
-      return `<tr style="background:#fafafa">
-        <td style="padding:5px 12px 5px 28px;font-size:12px;color:#374151;white-space:nowrap">${label}</td>
-        <td style="padding:5px 12px;font-size:11px;color:#9ca3af">${a.type}</td>
-        <td colspan="3" style="padding:5px 12px;white-space:nowrap">${statusDot}</td>
-        <td style="padding:5px 12px"></td>
-        ${weekCells}${ce?`<td style="padding:5px 8px"></td>`:''}</tr>`;
-    }).join('');
-  }
-  const memberRows=people.map(person=>{
-    const totalAllocs=WEEKS.map(w=>getPersonTotalAlloc(person,w));
-    const weekCells=visibleWeeks().map(w=>{ const t=totalAllocs[WEEKS.indexOf(w)]; return `<td class="wk ${wCls(t)}" style="font-weight:700">${t>0?t+'%':'–'}</td>`; }).join('');
-    const badge=person.registered?`<span style="background:#e0f2fe;color:#075985;font-size:10px;font-weight:700;padding:1px 6px;border-radius:20px;margin-left:6px">Member</span>`:`<span style="background:#f3f4f6;color:#6b7280;font-size:10px;font-weight:700;padding:1px 6px;border-radius:20px;margin-left:6px">Planning</span>`;
-    const isEditing=ce&&person.registered&&state.editingMemberId===person.id;
-    const editRow=isEditing?`<tr style="background:var(--green-bg)"><td colspan="${6+visibleWeeks().length}" style="padding:0"><div class="edit-member-panel"><div style="font-size:11px;font-weight:700;color:#0f6e56;margin-bottom:12px;text-transform:uppercase;letter-spacing:.05em">✏ Editing: ${person.name}</div><div class="fgrid"><div class="fg"><label class="lbl">Full name</label><input class="inp" id="em-name-${person.id}" placeholder="${state.emName}" oninput="state.emName=this.value" /></div><div class="fg"><label class="lbl">Country</label><select class="sel" onchange="state.emCountry=this.value"><option value="Sweden"${state.emCountry==='Sweden'?' selected':''}>Sweden</option><option value="Poland"${state.emCountry==='Poland'?' selected':''}>Poland</option></select></div><div class="fg"><label class="lbl">Skillset</label><input class="inp" id="em-skill-${person.id}" placeholder="${state.emSkill}" oninput="state.emSkill=this.value" /></div><div class="fg"><label class="lbl">Level</label><select class="sel" onchange="state.emLevel=this.value"><option${state.emLevel==='Junior'?' selected':''}>Junior</option><option${state.emLevel==='Mid'?' selected':''}>Mid</option><option${state.emLevel==='Senior'?' selected':''}>Senior</option></select></div><div class="fg"><label class="lbl">Teamlead</label><input class="inp" id="em-tl-${person.id}" placeholder="${state.emTeamlead||'inherit from team'}" list="people-list-optional" autocomplete="off" oninput="state.emTeamlead=this.value" /></div><div class="fg"><label class="lbl">Manager</label><input class="inp" id="em-mgr-${person.id}" placeholder="${state.emManager||'inherit from team'}" list="people-list-optional" autocomplete="off" oninput="state.emManager=this.value" /></div><div style="display:flex;gap:8px;padding-top:4px;align-items:flex-end;grid-column:1/-1"><button class="btn primary sm" onclick="saveMemberEditFromInputs(${person.id})">✓ Save</button><button class="btn sm" onclick="state.editingMemberId=null;render()">✕ Cancel</button><button class="btn danger sm" onclick="removeTeamMember(${person.id})">🗑 Remove</button></div></div></div></td></tr>`:'';
-    return `<tr style="background:var(--green-bg);border-top:2px solid #e5e7eb">
-      <td style="padding:10px 12px;font-size:13px;font-weight:700;white-space:nowrap;${ce&&person.registered?'cursor:pointer':''}" ${ce&&person.registered?`onclick="startEditMember(${person.id})"`:''}>${person.name}${badge}</td>
-      <td style="padding:10px 12px;font-size:12px;color:#6b7280">${person.skillset}</td>
-      <td style="padding:10px 12px;font-size:12px;color:#6b7280">${person.level}</td>
-      <td style="padding:10px 12px;font-size:12px;color:#6b7280">${person.country}</td>
-      <td style="padding:10px 12px;font-size:12px;color:#6b7280">${getTeamlead(person.name)?`<div style="font-size:10px;color:#0f6e56;font-weight:700">TL: ${getTeamlead(person.name)}</div>`:''}${getManager(person.name)?`<div style="font-size:10px;color:#185fa5;font-weight:700">Mgr: ${getManager(person.name)}</div>`:''}${!getTeamlead(person.name)&&!getManager(person.name)?`<span style="color:#d1d5db;font-size:11px">–</span>`:''}</td>
-      <td style="padding:10px 12px;font-size:12px;color:#6b7280">${person.assignments.length} asgmt${person.assignments.length!==1?'s':''}</td>
-      ${weekCells}<td style="padding:10px 8px"></td></tr>${editRow}${assignmentRows(person)}`;
-  }).join('');
+  const grouped = new Map();
+  planned.forEach(a => { if(!grouped.has(a.workName)) grouped.set(a.workName,[]); grouped.get(a.workName).push(a); });
 
   return `
-    <div style="margin-bottom:12px"><button class="btn sm" onclick="setTab('overview')">← Back to Overview</button></div>
     <div class="card" style="margin-bottom:16px">
-      <div class="card-hdr"><span class="card-title">👥 ${teamName} Team</span><div style="display:flex;gap:16px;font-size:12px;color:#6b7280"><span><strong style="color:#111827">${people.length}</strong> member${people.length!==1?'s':''}</span><span><strong style="color:#0f6e56">${totalCommitted}</strong> committed</span><span><strong style="color:#b45309">${totalPlanned}</strong> planned</span></div></div>
-      <div style="padding:14px 18px;border-top:1px solid #f3f4f6;display:grid;grid-template-columns:1fr 1fr;gap:12px">
-        <div><div class="org-label">Team Lead</div>${ce?`<div style="display:flex;align-items:center;gap:8px">${peopleSelectOptional('tc-tl-'+teamName,state.teamConfig[teamName]?.teamlead||'','saveTeamConfig(\''+teamName+'\',\'teamlead\',this.value)','flex:1;max-width:220px')}${state.teamConfig[teamName]?.teamlead?`<span style="font-size:11px;color:#0f6e56;font-weight:600">✓ ${state.teamConfig[teamName].teamlead}</span>`:'<span style="font-size:11px;color:#9ca3af">Not assigned</span>'}</div>`:`<div class="org-person">${state.teamConfig[teamName]?.teamlead||'<span style="color:#9ca3af;font-weight:400">Not assigned</span>'}</div>`}</div>
-        <div><div class="org-label">Manager</div>${ce?`<div style="display:flex;align-items:center;gap:8px">${peopleSelectOptional('tc-mgr-'+teamName,state.teamConfig[teamName]?.manager||'','saveTeamConfig(\''+teamName+'\',\'manager\',this.value)','flex:1;max-width:220px')}${state.teamConfig[teamName]?.manager?`<span style="font-size:11px;color:#185fa5;font-weight:600">✓ ${state.teamConfig[teamName].manager}</span>`:'<span style="font-size:11px;color:#9ca3af">Not assigned</span>'}</div>`:`<div class="org-person">${state.teamConfig[teamName]?.manager||'<span style="color:#9ca3af;font-weight:400">Not assigned</span>'}</div>`}</div>
-      </div>
+      <div class="card-hdr"><span class="card-title">⏳ Pipeline — Planned but not committed</span><span class="card-sub">${planned.length} assignment${planned.length!==1?'s':''} across ${grouped.size} work item${grouped.size!==1?'s':''}</span></div>
     </div>
-
-    ${(()=>{
-      const svcs = state.baseServices.filter(s=>s.team===teamName&&s.targetPct>0);
-      if(!svcs.length) return '';
-      const teamDebt = calcTeamDebt(teamName);
-      return `<div class="card" style="margin-bottom:16px">
+    ${[...grouped.entries()].map(([workName, items]) => {
+      const proj = state.projects.find(p=>p.name===workName);
+      return `<div class="card" style="margin-bottom:12px">
         <div class="card-hdr">
-          <span class="card-title">🔧 Technical debt — Base Services</span>
-          <span class="card-sub">Accumulated W1–W${CURRENT_WEEK-1}</span>
-        </div>
-        ${svcs.map(s=>{
-          const debt=calcSvcDebt(s);
-          const currentAlloc=getSvcAlloc(s.name,CURRENT_WEEK);
-          const onTrack=currentAlloc>=s.targetPct;
-          const debtColor=debt.debtPct===0?'#0f6e56':debt.debtPct<s.targetPct*4?'#b45309':'#b91c1c';
-          const debtBg=debt.debtPct===0?'#d1fae5':debt.debtPct<s.targetPct*4?'#fef3c7':'#fef2f2';
-          const maxDebt=s.targetPct*(CURRENT_WEEK-1);
-          const barPct=maxDebt>0?Math.min(100,Math.round((debt.debtPct/maxDebt)*100)):0;
-          return `<div style="padding:12px 18px;border-bottom:1px solid #f3f4f6">
-            <div style="display:flex;align-items:center;gap:12px">
-              <div style="flex:1">
-                <div style="font-size:13px;font-weight:600;color:#111827">${s.name}</div>
-                <div style="font-size:11px;color:#6b7280;margin-top:2px">Target <strong>${s.targetPct}%</strong> · Now <strong style="color:${onTrack?'#0f6e56':'#b91c1c'}">${currentAlloc}%</strong> ${onTrack?'✓':('↓ '+(s.targetPct-currentAlloc)+'% below target')}</div>
-                <div style="margin-top:6px;height:5px;background:#f3f4f6;border-radius:3px;overflow:hidden;max-width:300px">
-                  <div style="height:100%;width:${barPct}%;background:${debtColor};border-radius:3px"></div>
-                </div>
-              </div>
-              <div style="text-align:right;flex-shrink:0">
-                <span style="background:${debtBg};color:${debtColor};padding:2px 10px;border-radius:20px;font-size:12px;font-weight:700">${debt.debtPct===0?'✓ No debt':debt.debtPct+'%'}</span>
-                ${debt.debtPct>0?`<div style="font-size:10px;color:#9ca3af;margin-top:4px">= ${debt.debtWeeks} weeks fulltime</div>`:''}
-              </div>
-            </div>
-          </div>`;
-        }).join('')}
-        <div style="padding:10px 18px;background:#f9fafb;border-top:1px solid #f3f4f6;display:flex;align-items:center;justify-content:space-between">
-          <span style="font-size:12px;color:#6b7280">${svcs.length} services tracked</span>
-          <div style="text-align:right">
-            <span style="font-size:13px;font-weight:700;color:${teamDebt.debtPct===0?'#0f6e56':teamDebt.debtPct<400?'#b45309':'#b91c1c'}">Total: ${teamDebt.debtPct===0?'✓ No debt':teamDebt.debtPct+'% · '+teamDebt.debtWeeks+'w'}</span>
+          <span class="card-title">${items[0].type==='Project'?'💼':'🔧'} ${workName}</span>
+          <div style="display:flex;gap:10px;align-items:center">
+            <span class="badge b-type">${items[0].type}</span>
+            ${proj?`<span style="font-size:11px;color:#9ca3af">📅 ${proj.startDate||'—'} → ${proj.endDate||'—'}</span>`:''}
+            <span style="font-size:11px;color:#b45309;font-weight:600">${items.length} resource${items.length!==1?'s':''} planned</span>
           </div>
         </div>
+        <div class="tbl-wrap"><table>
+          <thead><tr><th>Resource</th><th>Team</th><th>Skill</th><th>Level</th><th>Country</th><th>Periods</th><th>Total weeks</th>${ce?'<th>Action</th>':''}</tr></thead>
+          <tbody>${items.map(a => {
+            const idx = state.assignments.indexOf(a);
+            const rawN = a.name&&a.name.startsWith('__pm_planned__') ? 'No name' : a.name;
+            const dn = r==='Project Manager' ? (a.committed?rawN:'No name') : rawN;
+            const totalW = a.periods.reduce((s,p)=>s+(p.endWeek-p.startWeek+1),0);
+            const periods = a.periods.map(p=>`<span class="ptag">W${p.startWeek}–${p.endWeek}: ${p.allocationPercent}%</span>`).join(' ');
+            return `<tr>
+              <td style="background:${cBg(a.country)}"><strong>${dn}</strong></td>
+              <td>${a.team}</td><td>${a.skillset}</td><td>${a.level}</td><td>${a.country}</td>
+              <td>${periods}</td>
+              <td><strong style="font-family:'DM Mono',monospace">${totalW}</strong> week${totalW!==1?'s':''}</td>
+              ${ce?`<td style="white-space:nowrap"><button class="btn primary sm" onclick="commitA(${idx})">🔒 Commit</button><button class="btn danger sm" style="margin-top:4px" onclick="delAssignment(${idx})">🗑 Delete</button></td>`:''}
+            </tr>`;
+          }).join('')}</tbody>
+        </table></div>
       </div>`;
-    })()}
-
-    ${ce?`<div class="card" style="margin-bottom:16px"><div class="card-hdr"><span class="card-title">＋ Add team member</span></div><div class="card-body" style="display:flex;flex-direction:column;gap:14px"><div style="display:grid;grid-template-columns:1.5fr 1fr 1.5fr 1fr auto;gap:12px;align-items:flex-end"><div class="fg"><label class="lbl">Full name *</label><input class="inp" id="inp-tmName" list="people-list" placeholder="Type or pick a name…" autocomplete="off" oninput="onPersonInput(this.value,'tm')" /></div><div class="fg"><label class="lbl">Country</label><select class="sel" onchange="state.tmCountry=this.value"><option value="Sweden"${state.tmCountry==='Sweden'?' selected':''}>Sweden</option><option value="Poland"${state.tmCountry==='Poland'?' selected':''}>Poland</option></select></div><div class="fg"><label class="lbl">Skillset *</label><input class="inp" id="inp-tmSkill" placeholder="e.g. React, DevOps" oninput="state.tmSkill=this.value" onkeydown="if(event.key==='Enter')addTeamMember()" /></div><div class="fg"><label class="lbl">Level</label><select class="sel" onchange="state.tmLevel=this.value"><option${state.tmLevel==='Junior'?' selected':''}>Junior</option><option${state.tmLevel==='Mid'?' selected':''}>Mid</option><option${state.tmLevel==='Senior'?' selected':''}>Senior</option></select></div><button class="btn primary" onclick="addTeamMember()" style="white-space:nowrap">＋ Add member</button></div><div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;padding:12px;background:#f9fafb;border-radius:8px;border:1px solid #f3f4f6"><div class="fg"><label class="lbl">Teamlead override <span style="color:#9ca3af;font-weight:400">— blank = team default: <strong>${state.teamConfig[state.selectedTeam]?.teamlead||'none set'}</strong></span></label><input class="inp" id="inp-tmTl" list="people-list-optional" placeholder="Blank = inherit from team" autocomplete="off" oninput="state.tmTeamlead=this.value" /></div><div class="fg"><label class="lbl">Manager override <span style="color:#9ca3af;font-weight:400">— blank = team default: <strong>${state.teamConfig[state.selectedTeam]?.manager||'none set'}</strong></span></label><input class="inp" id="inp-tmMgr" list="people-list-optional" placeholder="Blank = inherit from team" autocomplete="off" oninput="state.tmManager=this.value" /></div></div></div></div>`:''}
-    <div class="card">
-      <div class="card-hdr"><span class="card-title">📅 Weekly allocation — all 52 weeks</span><div style="display:flex;align-items:center;gap:12px">${weekRangeToggle()}<span class="card-sub">Green row = person total · White rows = per-assignment breakdown</span></div></div>
-      ${people.length===0?`<div class="empty"><span class="empty-icon">👥</span>No team members in ${teamName} yet.</div>`:`<div class="tbl-wrap"><table><thead><tr>
-              <th>Name</th><th>Skill</th><th>Level</th><th>Country</th><th>Reporting</th><th>Assignments</th>
-              ${visibleWeeks().map(w=>wkHdr(w)).join('')}${ce?'<th></th>':''}
-            </tr></thead><tbody>${memberRows}</tbody></table></div>`}
-    </div>`;
+    }).join('')}`;
 }
 
-function getAllPeople(){
-  const map=new Map();
-  state.teamMembers.forEach(m=>map.set(m.name.trim().toLowerCase(),{name:m.name,team:m.team,country:m.country,skillset:m.skillset,level:m.level}));
-  state.assignments.forEach(a=>{ const key=a.name.trim().toLowerCase(); if(!map.has(key)) map.set(key,{name:a.name,team:a.team,country:a.country,skillset:a.skillset,level:a.level}); });
-  return [...map.values()].sort((a,b)=>a.name.localeCompare(b.name));
-}
-
-function onPersonInput(val,target){
-  if(target==='add') state.aName=val;
-  else if(target==='tm') state.tmName=val;
-  else if(target==='pr') state.prName=val;
-  const match=getAllPeople().find(p=>p.name.trim().toLowerCase()===val.trim().toLowerCase());
-  if(match){
-    if(target==='add'){ state.aName=match.name; state.aTeam=match.team; state.aCountry=match.country; state.aSkill=match.skillset; state.aLevel=match.level; clearTimeout(_debounceTimer); render(); }
-    else if(target==='tm'){ state.tmName=match.name; state.tmCountry=match.country; state.tmSkill=match.skillset; state.tmLevel=match.level; }
-    else if(target==='pr'){ state.prName=match.name; state.prTeam=match.team; state.prCountry=match.country; state.prSkill=match.skillset; state.prLevel=match.level; clearTimeout(_debounceTimer); render(); }
-  } else if(target==='add') debounce(render,600);
-}
-
-function peopleSelect(id,value,onchangeCode,extraStyle,emptyLabel){
-  const ph=emptyLabel||'Type or select person…';
-  setTimeout(()=>{ const el=document.getElementById(id); if(el&&document.activeElement!==el) el.value=value||''; },0);
-  return `<input class="sel" id="${id}" list="people-list" placeholder="${ph}" style="${extraStyle||''}" autocomplete="off" oninput="${onchangeCode}" onblur="render()" />`;
-}
-function peopleSelectOptional(id,value,onchangeCode,extraStyle){
-  setTimeout(()=>{ const el=document.getElementById(id); if(el&&document.activeElement!==el) el.value=value||''; },0);
-  return `<input class="sel" id="${id}" list="people-list-optional" placeholder="Type name or leave blank…" style="${extraStyle||''}" autocomplete="off" oninput="${onchangeCode}" onblur="debounce(render,200)" />`;
-}
-
-function updateSidebarForRole(){
-  const tm=role()==='Team Member';
-  const el=document.getElementById('sidebar-teams-section');
-  if(el) el.style.display=tm?'none':'';
-}
-
-function toggleDark(){
-  const isDark=document.body.classList.toggle('dark');
-  localStorage.setItem('rp_dark',isDark?'1':'0');
-  document.getElementById('dark-btn').textContent=isDark?'☀ Light':'🌙 Dark';
-}
-(function(){ if(localStorage.getItem('rp_dark')==='1') document.body.classList.add('dark'); })();
-
-function buildDatalist(){
-  const people=getAllPeople(), opts=people.map(p=>`<option value="${p.name}">${p.skillset} · ${p.team}</option>`).join('');
-  let dl=document.getElementById('people-list');
-  if(!dl){ dl=document.createElement('datalist'); dl.id='people-list'; document.body.appendChild(dl); }
-  dl.innerHTML=opts;
-  let dl2=document.getElementById('people-list-optional');
-  if(!dl2){ dl2=document.createElement('datalist'); dl2.id='people-list-optional'; document.body.appendChild(dl2); }
-  dl2.innerHTML=opts;
-}
-
-function setTab(t){
-  state.tab=t;
-  const tabNames={dashboard:'Dashboard',overview:'Overview','person-detail':'Person Detail',projects:'Projects','project-detail':'Project Detail',services:'Base Services','team-detail':'Team Detail',inbox:'Inbox',pipeline:'Pipeline',add:'Planning mode'};
-  document.querySelectorAll('.nav-item').forEach(el=>{ el.classList.toggle('active',el.textContent.trim().replace(/^./,'').trim()===tabNames[t]); });
-  document.getElementById('tab-title').textContent=tabNames[t];
-  render();
-}
-
-function flashMsg(text,ok){ state.msg={text,ok}; render(); setTimeout(()=>{state.msg=null;render();},3000); }
-
-function render(){
-  buildDatalist(); updateSidebarForRole();
-  const darkBtn=document.getElementById('dark-btn');
-  if(darkBtn) darkBtn.textContent=document.body.classList.contains('dark')?'☀ Light':'🌙 Dark';
-  document.getElementById('foot').textContent=`${state.assignments.length} assignment${state.assignments.length!==1?'s':''} · ${state.projects.length} project${state.projects.length!==1?'s':''}`;
-  saveData();
-  const el=document.getElementById('content'), t=state.tab;
-  if(t==='dashboard'){
-    el.innerHTML=renderDashboard();
-    const tac=document.getElementById('team-alloc-card');
-    if(tac){
-      const cw2=CURRENT_WEEK, AR=state.dashAllocRange||8, aw=WEEKS.slice(cw2-1,cw2-1+AR).filter(w=>w<=52);
-      const tm={'Development':[],'Platform':[],'PMO':[]};
-      const tn=t2=>{ if(!t2)return null; const s=t2.trim().toLowerCase(); return s==='development'?'Development':s==='platform'?'Platform':s==='pmo'?'PMO':null; };
-      state.teamMembers.forEach(m=>{ const t2=tn(m.team); if(t2&&!tm[t2].includes(m.name))tm[t2].push(m.name); });
-      state.assignments.forEach(a=>{ const t2=tn(a.team); if(t2&&!tm[t2].includes(a.name))tm[t2].push(a.name); });
-      tac.innerHTML=buildTeamAllocCard(tm,aw,cw2,state);
-    }
-  }
-  else if(t==='overview'){ el.innerHTML=renderOverview(); }
-  else if(t==='person-detail') el.innerHTML=renderPersonDetail();
-  else if(t==='planning') el.innerHTML=renderPlanning();
-  else if(t==='projects') el.innerHTML=renderProjects();
-  else if(t==='project-detail'){ el.innerHTML=renderProjectDetail(); }
-  else if(t==='services') el.innerHTML=renderServices();
-  else if(t==='team-detail'){ el.innerHTML=renderTeamDetail(); }
-  else if(t==='inbox') el.innerHTML=renderInbox();
-  else if(t==='pipeline') el.innerHTML=renderPipeline();
-  else if(t==='add'){ if(role()==='Project Manager') state.addType='Project'; el.innerHTML=renderAdd(); }
-}
-
-function renderOverview(){
-  const allPeople=getPeople(), conf=state.assignments.filter(a=>a.committed).length, planned=state.assignments.filter(a=>!a.committed).length;
-  const r=role(), ce=canEdit();
-  const teams=[...new Set(['Development','Platform','PMO',...allPeople.map(p=>p.team)].filter(Boolean))].sort();
-  const skills=[...new Set(allPeople.map(p=>p.skillset).filter(Boolean))].sort();
-  const levels=[...new Set(allPeople.map(p=>p.level).filter(Boolean))].sort();
-  const assignments=[...new Set(state.assignments.map(a=>a.workName).filter(Boolean))].sort();
-  let people=allPeople.filter(p=>{
-    const n=state.fName.trim().toLowerCase(), s=state.fSkill.trim().toLowerCase();
-    if(state.fTeam&&p.team!==state.fTeam) return false;
-    if(n&&!p.name.toLowerCase().includes(n)) return false;
-    if(s&&!p.skillset.toLowerCase().includes(s)) return false;
-    if(state.fLevel&&p.level!==state.fLevel) return false;
-    if(state.fAssignment&&!visibleAssignments().some(a=>a.name===p.name&&a.workName===state.fAssignment)) return false;
-    if(state.fStatus){
-      const personA=visibleAssignments().filter(a=>a.name===p.name);
-      if(state.fStatus==='planned'&&!personA.some(a=>!a.committed)) return false;
-      if(state.fStatus==='committed'&&!personA.some(a=>a.committed)) return false;
-      if(state.fStatus==='overbooked'&&!WEEKS.some(w=>getTotalAlloc(p.name,w)>100)) return false;
-    }
-    return true;
-  });
-  const activeFilters=[state.fTeam,state.fName,state.fSkill,state.fLevel,state.fAssignment,state.fStatus].filter(Boolean).length;
-  const filterBar=`<div class="filter-bar">
-    ${(function(){ if(role()==='Team Member') return ''; const opts=getAllPeople().map(p=>'<option value="'+p.name+'"'+(state.fName===p.name?' selected':'')+'>'+p.name+'</option>').join(''); return '<div><label class="filter-lbl">Name</label><select class="filter-inp" style="width:150px" onchange="state.fName=this.value;render()"><option value="">All people</option>'+opts+'</select></div>'; })()}
-    <div><label class="filter-lbl">Team</label><select class="filter-inp" onchange="state.fTeam=this.value;render()"><option value="">All teams</option>${teams.map(t=>`<option value="${t}"${state.fTeam===t?' selected':''}>${t}</option>`).join('')}</select></div>
-    <div><label class="filter-lbl">Skill</label><input class="filter-inp" style="width:120px" placeholder="Filter skill…" value="${state.fSkill}" oninput="setFilter('fSkill',this.value)" /></div>
-    <div><label class="filter-lbl">Level</label><select class="filter-inp" onchange="state.fLevel=this.value;render()"><option value="">All levels</option>${levels.map(l=>`<option value="${l}"${state.fLevel===l?' selected':''}>${l}</option>`).join('')}</select></div>
-    <div><label class="filter-lbl">Assignment</label><select class="filter-inp" style="max-width:180px" onchange="state.fAssignment=this.value;render()"><option value="">All assignments</option>${assignments.map(a=>`<option value="${a}"${state.fAssignment===a?' selected':''}>${a}</option>`).join('')}</select></div>
-    <div><label class="filter-lbl">Status</label><select class="filter-inp" onchange="state.fStatus=this.value;render()"><option value="">All</option><option value="planned"${state.fStatus==='planned'?' selected':''}>⏳ Planned only</option><option value="committed"${state.fStatus==='committed'?' selected':''}>✓ Has committed</option><option value="overbooked"${state.fStatus==='overbooked'?' selected':''}>🔴 Overbooked</option></select></div>
-    ${activeFilters>0?`<button class="btn sm" style="margin-top:16px" onclick="state.fTeam='';state.fName='';state.fSkill='';state.fLevel='';state.fAssignment='';state.fStatus='';render()">✕ Clear filters (${activeFilters})</button>`:''}
-  </div>`;
-  let rows='';
-  if(!people.length){
-    rows=`<div class="empty"><span class="empty-icon">👥</span>${allPeople.length?'No results match your filters.':'No allocations yet. Go to Planning mode to get started.'}</div>`;
-  } else {
-    rows=`<div class="tbl-wrap"><table><thead><tr>
-        <th>Name</th><th>Skill</th><th>Level</th><th>Country</th><th>Team</th><th>Status</th>
-        ${visibleWeeks().map(w=>wkHdr(w)).join('')}
-      </tr></thead><tbody>${people.map(p=>{
-      const dn=(r==='Project Manager'&&visibleAssignments().some(a=>a.name===p.name&&!a.committed))?'— Planned resource —':p.name;
-      const personA=visibleAssignments().filter(a=>a.name===p.name);
-      const hasCom=personA.some(a=>a.committed), hasPlan=personA.some(a=>!a.committed);
-      const statusBadge=hasCom&&hasPlan?`<span class="status-mixed">Mixed</span>`:hasCom?`<span class="status-committed">✓ Committed</span>`:hasPlan?`<span class="status-planned">⏳ Planned</span>`:`<span style="font-size:10px;color:#d1d5db">–</span>`;
-      const clickAttr=ce?`onclick="openPersonDetail('${p.name.replace(/'/g,"\\'")}')"`:'';
-      return `<tr class="${ce?'person-row-click':''}" ${clickAttr}>
-        <td style="background:${cBg(p.country)}"><strong>${dn}</strong>${ce?`<span style="font-size:10px;color:#9ca3af;margin-left:6px">→</span>`:''}</td>
-        <td>${p.skillset}</td><td>${p.level}</td><td>${p.country}</td>
-        <td><span style="cursor:pointer;color:#1D9E75;text-decoration:underline" onclick="event.stopPropagation();openTeam('${p.team}')">${p.team}</span></td>
-        <td>${statusBadge}</td>
-        ${visibleWeeks().map(w=>wkCell(w,getTotalAlloc(p.name,w))).join('')}
-      </tr>`;
-    }).join('')}</tbody></table></div>`;
-  }
-  return `
-    <div class="metrics"><div class="metric"><div class="metric-lbl">People</div><div class="metric-val">${allPeople.length}</div></div><div class="metric"><div class="metric-lbl">Assignments</div><div class="metric-val">${state.assignments.length}</div></div><div class="metric"><div class="metric-lbl">Committed</div><div class="metric-val green">${conf}</div></div><div class="metric"><div class="metric-lbl">Planned</div><div class="metric-val" style="color:#b45309">${planned}</div></div></div>
-    <div class="card"><div class="card-hdr"><span class="card-title">📅 Total allocation per person</span><div style="display:flex;align-items:center;gap:12px">${weekRangeToggle()}<span class="card-sub">${activeFilters>0?`${people.length} of ${allPeople.length} shown`:`W${CURRENT_WEEK}–W52 · click a person for details`}</span></div></div>${filterBar}${rows}</div>`;
-}
-
+// ── renderPlanning (detailed) ─────────────────────────────────────────────────
 function renderPlanning(){
-  const vas=visibleAssignments();
+  const vas = visibleAssignments(), ce = canEdit();
   if(!vas.length) return `<div class="card"><div class="empty"><span class="empty-icon">📋</span>No planning entries yet.</div></div>`;
-  const ce=canEdit();
-  return `<div class="card"><div class="card-hdr"><span class="card-title">👥 Detailed planning</span><span class="card-sub">All 52 weeks</span></div><div class="tbl-wrap"><table><thead><tr><th>Resource</th><th>Team</th><th>Country</th><th>Skill</th><th>Level</th><th>Type</th><th>Work</th>${WEEKS.map(w=>wkHdr(w)).join('')}<th>Status</th><th style="min-width:190px">Periods</th></tr></thead><tbody>${vas.map((a,ai)=>{
-    const dn=a.name&&a.name.startsWith('__pm_planned__')?(a.committed?a.name:'No name'):(!a.committed&&role()==='Project Manager'?'— Planned resource —':a.name);
-    const wks=WEEKS.map(w=>wkCell(w,getAlloc(a,w))).join('');
-    const periods=a.periods.map((p,pi)=>`<div style="display:flex;align-items:center;gap:4px;margin-bottom:4px"><span class="ptag">W${p.startWeek}–${p.endWeek}: ${p.allocationPercent}%</span>${ce?`<button class="btn danger sm" onclick="delPeriod(${ai},${pi})">🗑</button>`:''}</div>`).join('');
-    const actions=ce?`<div style="display:flex;flex-direction:column;gap:4px;margin-top:6px"><button class="btn sm" onclick="addPeriod(${ai})">+ Add period</button><button class="btn danger sm" onclick="delAssignment(${ai})">🗑 Delete</button></div>`:'';
-    const status=a.committed?`<span class="badge b-committed">✓ Committed</span><div style="font-size:10px;color:#fff;background:#0f6e56;display:inline-block;padding:1px 6px;border-radius:4px;margin-top:3px;font-weight:600">${a.committedBy}</div>${ce?`<div style="margin-top:4px"><button class="btn danger sm" style="font-size:10px;padding:2px 6px" onclick="uncommitA(${ai})">↩ Uncommit</button></div>`:''}`:`<span class="badge b-plan">Planned</span>${ce?`<div style="margin-top:6px"><button class="btn primary sm" onclick="commitA(${ai})">🔒 Commit resource</button></div>`:'<div style="font-size:11px;color:#9ca3af;margin-top:4px">Awaiting commit</div>'}`;
-    return `<tr><td style="background:${cBg(a.country)}"><strong>${dn}</strong><div style="font-size:11px;color:#9ca3af">${a.country}·${a.skillset}·${a.level}</div></td><td>${a.team}</td><td>${a.country}</td><td>${a.skillset}</td><td>${a.level}</td><td><span class="badge b-type">${a.type}</span></td><td>${a.workName}</td>${wks}<td>${status}</td><td>${periods}${actions}</td></tr>`;
-  }).join('')}</tbody></table></div></div>`;
-}
-
-function renderProjects(){
-  const ce=canEdit(), r=role();
-  const visibleProjects=r==='Project Manager'?state.projects.filter(p=>isPmProject(p)):state.projects;
-  function fmtDate(d){ if(!d)return'—'; return new Date(d).toLocaleDateString('en-SE',{day:'2-digit',month:'short',year:'numeric'}); }
-  const list=visibleProjects.length?visibleProjects.map(p=>{
-    const allA=state.assignments.filter(a=>a.workName===p.name);
-    const vis=r==='Team Member'?allA.filter(a=>a.committed&&a.name.trim().toLowerCase()===userName().trim().toLowerCase()):allA;
-    const comm=vis.filter(a=>a.committed).length, plan=r!=='Team Member'?vis.filter(a=>!a.committed).length:0;
-    return `<div class="project-row" style="cursor:pointer;transition:box-shadow 0.15s" onmouseover="this.style.boxShadow='0 2px 8px rgba(0,0,0,0.08)'" onmouseout="this.style.boxShadow=''" onclick="openProject(${p.id})"><div style="flex:1"><div style="font-size:13px;font-weight:700;color:#111827;margin-bottom:2px">${p.name} <span style="font-size:11px;color:#9ca3af;font-weight:400">→ click to view</span></div><div style="font-size:11px;color:#9ca3af;margin-top:2px">📅 ${fmtDate(p.startDate)} → ${fmtDate(p.endDate)}${p.projectManager?` &nbsp;·&nbsp; PM: <strong style="color:#374151">${p.projectManager}</strong>`:''}</div>${p.description?`<div style="font-size:11px;color:#6b7280;margin-top:3px;white-space:normal;max-width:400px;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical">${p.description}</div>`:''}</div><div style="display:flex;gap:8px;align-items:center">${comm>0?`<span style="background:#d1fae5;color:#065f46;padding:2px 10px;border-radius:20px;font-size:11px;font-weight:700">✓ ${comm} committed</span>`:''}${plan>0?`<span style="background:#fef3c7;color:#92400e;padding:2px 10px;border-radius:20px;font-size:11px;font-weight:700">⏳ ${plan} planned</span>`:''}${!comm&&!plan?`<span style="color:#d1d5db;font-size:11px">No resources yet</span>`:''}${ce?`<button class="btn danger sm" style="margin-left:4px" onclick="event.stopPropagation();deleteProject(${p.id})">🗑</button>`:''}</div></div>`;
-  }).join(''):r==='Project Manager'?`<div class="empty" style="padding:24px 0"><span class="empty-icon">💼</span>No projects assigned to you yet.</div>`:`<div class="empty" style="padding:24px 0"><span class="empty-icon">💼</span>No projects yet.</div>`;
-  return `<div class="card"><div class="card-hdr"><span class="card-title">💼 Projects</span></div><div class="card-body">${ce?`<div class="ibox"><div class="sec-title">Add project</div><div class="frow"><div class="fg"><label class="lbl">Project name</label><input class="inp" placeholder="e.g. Platform Renewal" value="${state.pName}" oninput="state.pName=this.value" onkeydown="if(event.key==='Enter')addProject()" /></div><div class="fg"><label class="lbl">Project manager</label>${peopleSelectOptional('add-pm',state.pPm,'state.pPm=this.value','')}</div><div class="fg"><label class="lbl">Start date</label><input class="inp" type="date" value="${state.pStart}" oninput="state.pStart=this.value" /></div><div class="fg"><label class="lbl">End date</label><input class="inp" type="date" value="${state.pEnd}" oninput="state.pEnd=this.value" /></div><div class="fg" style="grid-column:1/-1"><label class="lbl">Description <span style="color:#9ca3af;font-weight:400">(optional)</span></label><textarea class="inp" rows="2" style="resize:vertical" oninput="state.pDesc=this.value">${state.pDesc}</textarea></div><div style="padding-top:4px"><button class="btn primary" onclick="addProject()">＋ Add project</button></div></div></div>`:''}${list}</div></div>`;
-}
-
-// ── Week range toggle ─────────────────────────────────────────────────────
-function weekRangeToggle(){
-  return `<button class="btn sm" onclick="state.showAllWeeks=!state.showAllWeeks;render()" style="font-size:11px">
-    ${state.showAllWeeks ? '← Current week' : '⟵ All weeks'}
-  </button>`;
-}
-
-function getSvcAlloc(svcName, w){
-  // Total allocation assigned to this base service in week w
-  return state.assignments
-    .filter(a => a.type==='Base Service' && a.workName===svcName)
-    .reduce((s,a) => s+getAlloc(a,w), 0);
-}
-
-function calcSvcDebt(svc){
-  // Debt is accumulated week by week from W1 up to (not including) current week
-  const target = svc.targetPct || 0;
-  if(!target) return {debtPct:0, debtWeeks:0, weeksChecked:0};
-  let debtPct = 0;
-  const weeksChecked = CURRENT_WEEK - 1; // weeks that have passed
-  for(let w=1; w<CURRENT_WEEK; w++){
-    const actual = getSvcAlloc(svc.name, w);
-    const shortfall = Math.max(0, target - actual);
-    debtPct += shortfall;
-  }
-  return {
-    debtPct: Math.round(debtPct),
-    debtWeeks: Math.round((debtPct/100)*10)/10, // e.g. 520% → 5.2 weeks
-    weeksChecked,
-  };
-}
-
-function calcTeamDebt(team){
-  const svcs = state.baseServices.filter(s => s.team===team && s.targetPct>0);
-  if(!svcs.length) return {debtPct:0, debtWeeks:0, svcs:[]};
-  let total = 0;
-  const details = svcs.map(s => { const d=calcSvcDebt(s); total+=d.debtPct; return {name:s.name, target:s.targetPct, ...d}; });
-  return {debtPct:Math.round(total), debtWeeks:Math.round((total/100)*10)/10, svcs:details};
-}
-
-function setSvcTarget(name, val){
-  state.baseServices = state.baseServices.map(s => s.name===name ? {...s, targetPct: Math.max(0,Math.min(200,+val||0))} : s);
-  saveData();
-  render();
-}
-
-function renderServices(){
-  const ce=canEdit();
-
-  const allGroups = TEAMS.map(t=>{
-    const svcs = state.baseServices.filter(s=>s.team===t);
-    const teamDebt = calcTeamDebt(t);
-    const teamHasTargets = svcs.some(s=>s.targetPct>0);
-
-    const svcRows = svcs.length ? svcs.map(s=>{
-      const debt = calcSvcDebt(s);
-      const currentAlloc = getSvcAlloc(s.name, CURRENT_WEEK);
-      const target = s.targetPct || 0;
-      const onTrack = !target || currentAlloc >= target;
-      const debtColor = debt.debtPct===0 ? '#0f6e56' : debt.debtPct<target*4 ? '#b45309' : '#b91c1c';
-      const debtBg   = debt.debtPct===0 ? '#d1fae5' : debt.debtPct<target*4 ? '#fef3c7' : '#fef2f2';
-
-      return `<div style="background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:12px 14px;margin-bottom:8px">
-        <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
-          <div style="flex:1;min-width:140px">
-            <div style="font-size:13px;font-weight:600;color:#111827">${s.name}</div>
-            ${target ? `<div style="font-size:11px;color:#6b7280;margin-top:2px">Target: <strong>${target}%</strong> · Now: <strong style="color:${onTrack?'#0f6e56':'#b91c1c'}">${currentAlloc}%</strong></div>` : `<div style="font-size:11px;color:#9ca3af;margin-top:2px">No target set</div>`}
-          </div>
-          ${target ? `<div style="text-align:right;flex-shrink:0">
-            <span style="background:${debtBg};color:${debtColor};padding:2px 10px;border-radius:20px;font-size:11px;font-weight:700">${debt.debtPct===0?'✓ No debt':'⚠ '+debt.debtPct+'% debt'}</span>
-            ${debt.debtPct>0 ? `<div style="font-size:10px;color:#9ca3af;margin-top:3px">= ${debt.debtWeeks} weeks fulltime</div>` : ''}
-          </div>` : ''}
-          ${ce ? `<div style="display:flex;align-items:center;gap:6px;flex-shrink:0">
-            <div style="display:flex;align-items:center;gap:4px">
-              <label style="font-size:10px;font-weight:700;color:#9ca3af;text-transform:uppercase;letter-spacing:.05em">Target %</label>
-              <input type="number" min="0" max="200" value="${target||''}" placeholder="0"
-                style="width:60px;padding:4px 6px;font-size:12px;border:1px solid #d1d5db;border-radius:6px;font-family:DM Mono,monospace;text-align:center"
-                oninput="setSvcTarget('${s.name.replace(/'/g,"\\'")}',this.value)" />
-            </div>
-            <button class="btn sm" onclick="editSvc('${s.name.replace(/'/g,"\\'")}')">✏</button>
-            <button class="btn danger sm" onclick="delSvc('${s.name.replace(/'/g,"\\'")}')">🗑</button>
-          </div>` : ''}
-        </div>
-        ${target && debt.debtPct>0 ? `
-        <div style="margin-top:10px">
-          <div style="display:flex;justify-content:space-between;font-size:10px;color:#9ca3af;margin-bottom:3px">
-            <span>Accumulated debt W1–W${CURRENT_WEEK-1}</span>
-            <span>${debt.debtPct}% of one FTE</span>
-          </div>
-          <div style="height:6px;background:#f3f4f6;border-radius:3px;overflow:hidden">
-            <div style="height:100%;width:${Math.min(100,Math.round((debt.debtPct/(target*CURRENT_WEEK))*100))}%;background:${debtColor};border-radius:3px;transition:width .3s"></div>
-          </div>
-        </div>` : ''}
-      </div>`;
-    }).join('') : `<div style="font-size:12px;color:#9ca3af;padding-bottom:6px">No services</div>`;
-
-    const teamDebtBadge = teamHasTargets
-      ? teamDebt.debtPct===0
-        ? `<span style="background:#d1fae5;color:#065f46;font-size:11px;font-weight:700;padding:1px 8px;border-radius:20px">✓ No debt</span>`
-        : `<span style="background:#fef3c7;color:#92400e;font-size:11px;font-weight:700;padding:1px 8px;border-radius:20px">⚠ ${teamDebt.debtPct}% · ${teamDebt.debtWeeks}w</span>`
-      : '';
-
-    return `<div style="margin-bottom:20px">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
-        <div class="svc-grp-lbl" style="margin:0">${t}</div>
-        ${teamDebtBadge}
-      </div>
-      ${svcRows}
-    </div>`;
-  }).join('');
-
   return `<div class="card">
-    <div class="card-hdr">
-      <span class="card-title">🔧 Base Services</span>
-      <span class="card-sub">Set a target % to track technical debt accumulation</span>
-    </div>
-    <div class="card-body">
-      ${ce?`<div class="ibox">
-        <div class="sec-title">Add base service</div>
-        <div class="frow">
-          <div class="fg"><label class="lbl">Team</label><select class="sel" style="width:140px" onchange="state.sTeam=this.value">${TEAMS.map(t=>`<option${state.sTeam===t?' selected':''}>${t}</option>`).join('')}</select></div>
-          <div class="fg" style="flex:1"><label class="lbl">Service name</label><input class="inp" placeholder="e.g. API Support" value="${state.sName}" oninput="state.sName=this.value" onkeydown="if(event.key==='Enter')addSvc()" /></div>
-          <div class="fg"><label class="lbl">Target %</label><input class="inp" type="number" min="0" max="200" placeholder="e.g. 10" value="${state.sTargetPct||''}" style="width:80px" oninput="state.sTargetPct=+this.value" /></div>
-          <button class="btn primary" onclick="addSvc()">＋ Add</button>
-        </div>
-      </div>`:''}
-      <div>${allGroups}</div>
-    </div>
-  </div>`;
+    <div class="card-hdr"><span class="card-title">👥 Detailed planning</span><span class="card-sub">All 52 weeks</span></div>
+    <div class="tbl-wrap"><table><thead><tr>
+      <th>Resource</th><th>Team</th><th>Country</th><th>Skill</th><th>Level</th><th>Type</th><th>Work</th>
+      ${WEEKS.map(w=>wkHdr(w)).join('')}<th>Status</th><th style="min-width:190px">Periods</th>
+    </tr></thead><tbody>${vas.map((a,ai) => {
+      const dn = a.name&&a.name.startsWith('__pm_planned__') ? (a.committed?a.name:'No name') : (!a.committed&&role()==='Project Manager'?'— Planned resource —':a.name);
+      const wks = WEEKS.map(w=>wkCell(w,getAlloc(a,w))).join('');
+      const periods = a.periods.map((p,pi)=>`<div style="display:flex;align-items:center;gap:4px;margin-bottom:4px"><span class="ptag">W${p.startWeek}–${p.endWeek}: ${p.allocationPercent}%</span>${ce?`<button class="btn danger sm" onclick="delPeriod(${ai},${pi})">🗑</button>`:''}</div>`).join('');
+      const actions = ce?`<div style="display:flex;flex-direction:column;gap:4px;margin-top:6px"><button class="btn sm" onclick="addPeriod(${ai})">+ Add period</button><button class="btn danger sm" onclick="delAssignment(${ai})">🗑 Delete</button></div>`:'';
+      const status = a.committed
+        ? `<span class="badge b-committed">✓ Committed</span><div style="font-size:10px;color:#fff;background:#0f6e56;display:inline-block;padding:1px 6px;border-radius:4px;margin-top:3px;font-weight:600">${a.committedBy}</div>${ce?`<div style="margin-top:4px"><button class="btn danger sm" style="font-size:10px;padding:2px 6px" onclick="uncommitA(${ai})">↩ Uncommit</button></div>`:''}`
+        : `<span class="badge b-plan">Planned</span>${ce?`<div style="margin-top:6px"><button class="btn primary sm" onclick="commitA(${ai})">🔒 Commit resource</button></div>`:'<div style="font-size:11px;color:#9ca3af;margin-top:4px">Awaiting commit</div>'}`;
+      return `<tr><td style="background:${cBg(a.country)}"><strong>${dn}</strong><div style="font-size:11px;color:#9ca3af">${a.country}·${a.skillset}·${a.level}</div></td><td>${a.team}</td><td>${a.country}</td><td>${a.skillset}</td><td>${a.level}</td><td><span class="badge b-type">${a.type}</span></td><td>${a.workName}</td>${wks}<td>${status}</td><td>${periods}${actions}</td></tr>`;
+    }).join('')}</tbody></table></div></div>`;
 }
 
-function buildPersonCalendar(name,selectedStart,selectedEnd){
-  const personAssignments=state.assignments.filter(a=>a.name.trim().toLowerCase()===name.trim().toLowerCase());
-  if(!personAssignments.length&&!name) return '';
-  const weekData=WEEKS.map(w=>{ const existing=personAssignments.reduce((s,a)=>s+getAlloc(a,w),0); const inNewRange=w>=selectedStart&&w<=selectedEnd; return {w,existing,inNewRange,projectedTotal:existing+(inNewRange?state.aPct:0)}; });
-  const hasAny=weekData.some(d=>d.existing>0||d.inNewRange);
-  const CHUNK=13; const rows=[];
-  for(let i=0;i<52;i+=CHUNK) rows.push(weekData.slice(i,i+CHUNK));
+// ── buildPersonCalendar (planning mode preview) ───────────────────────────────
+function buildPersonCalendar(name, selStart, selEnd){
+  const pa = state.assignments.filter(a => a.name.trim().toLowerCase()===name.trim().toLowerCase());
+  if(!pa.length&&!name) return '';
+  const weekData = WEEKS.map(w => {
+    const existing = pa.reduce((s,a)=>s+getAlloc(a,w),0);
+    const inNew    = w>=selStart && w<=selEnd;
+    return {w, existing, inNew, proj: existing + (inNew?state.aPct:0)};
+  });
+  const hasAny = weekData.some(d=>d.existing>0||d.inNew);
+  const rows = [];
+  for(let i=0;i<52;i+=13) rows.push(weekData.slice(i,i+13));
   function cellStyle(d){
-    const isCurrent=d.w===CURRENT_WEEK, outline=isCurrent?'outline:2px solid #1D9E75;outline-offset:-2px;':'';
-    if(d.inNewRange){ if(d.projectedTotal>100) return `background:#fecaca;color:#b91c1c;font-weight:700;${outline}`; if(d.projectedTotal===100) return `background:#6ee7b7;color:#065f46;font-weight:700;${outline}`; return `background:#bfdbfe;color:#1e40af;font-weight:700;${outline}`; }
+    const cur = d.w===CURRENT_WEEK, outline = cur?'outline:2px solid #1D9E75;outline-offset:-2px;':'';
+    if(d.inNew){
+      if(d.proj>100) return `background:#fecaca;color:#b91c1c;font-weight:700;${outline}`;
+      if(d.proj===100) return `background:#6ee7b7;color:#065f46;font-weight:700;${outline}`;
+      return `background:#bfdbfe;color:#1e40af;font-weight:700;${outline}`;
+    }
     if(d.existing>100) return `background:#fecaca;color:#b91c1c;font-weight:700;${outline}`;
     if(d.existing===100) return `background:#d1fae5;color:#065f46;font-weight:700;${outline}`;
     if(d.existing>0) return `background:#fef3c7;color:#92400e;font-weight:600;${outline}`;
-    return `background:${isCurrent?'rgba(29,158,117,0.07)':'#f9fafb'};color:#d1d5db;${outline}`;
+    return `background:${cur?'rgba(29,158,117,0.07)':'#f9fafb'};color:#d1d5db;${outline}`;
   }
-  const tableRows=rows.map(chunk=>`<tr>${chunk.map(d=>`<td style="text-align:center;padding:4px 2px;font-size:10px;font-family:'DM Mono',monospace;border-radius:3px;min-width:34px;${cellStyle(d)}"><div style="font-size:9px;color:inherit;opacity:.7;line-height:1">${d.w===CURRENT_WEEK?'▼':''}W${d.w}</div><div style="line-height:1.3">${d.projectedTotal>0?d.projectedTotal+'%':'–'}</div></td>`).join('')}</tr>`).join('');
-  const overbooked=weekData.filter(d=>d.inNewRange&&d.projectedTotal>100).length;
-  const warn=overbooked?`<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:6px;padding:6px 12px;font-size:12px;color:#b91c1c;margin-top:8px">⚠ ${overbooked} week${overbooked!==1?'s':''} would be overbooked with this new period</div>`:'';
-  return `<div class="add-sec"><div class="sec-title" style="display:flex;align-items:center;justify-content:space-between"><span>📅 ${name} — current &amp; planned allocation</span><div style="display:flex;gap:12px;font-size:10px;font-weight:600"><span style="display:inline-flex;align-items:center;gap:4px"><span style="width:10px;height:10px;border-radius:2px;background:#fef3c7;display:inline-block"></span>Partial</span><span style="display:inline-flex;align-items:center;gap:4px"><span style="width:10px;height:10px;border-radius:2px;background:#d1fae5;display:inline-block"></span>Full</span><span style="display:inline-flex;align-items:center;gap:4px"><span style="width:10px;height:10px;border-radius:2px;background:#fecaca;display:inline-block"></span>Over</span><span style="display:inline-flex;align-items:center;gap:4px"><span style="width:10px;height:10px;border-radius:2px;background:#bfdbfe;display:inline-block"></span>New</span></div></div>${!hasAny?`<div style="padding:12px;background:#f9fafb;border-radius:8px;font-size:12px;color:#9ca3af;text-align:center">✓ No existing allocations — all weeks are free.</div>`:`<div style="overflow-x:auto"><table style="border-collapse:separate;border-spacing:2px;min-width:100%">${tableRows}</table></div>`}${warn}${personAssignments.length?`<div style="margin-top:8px;font-size:11px;color:#9ca3af">${personAssignments.length} existing assignment${personAssignments.length!==1?'s':''}: ${[...new Set(personAssignments.map(a=>a.workName))].join(', ')}</div>`:''}</div>`;
+  const tableRows = rows.map(chunk=>`<tr>${chunk.map(d=>`<td style="text-align:center;padding:4px 2px;font-size:10px;font-family:'DM Mono',monospace;border-radius:3px;min-width:34px;${cellStyle(d)}"><div style="font-size:9px;opacity:.7;line-height:1">${d.w===CURRENT_WEEK?'▼':''}W${d.w}</div><div style="line-height:1.3">${d.proj>0?d.proj+'%':'–'}</div></td>`).join('')}</tr>`).join('');
+  const over = weekData.filter(d=>d.inNew&&d.proj>100).length;
+  return `<div class="add-sec">
+    <div class="sec-title" style="display:flex;align-items:center;justify-content:space-between">
+      <span>📅 ${name} — current &amp; planned allocation</span>
+      <div style="display:flex;gap:12px;font-size:10px;font-weight:600">
+        <span style="display:inline-flex;align-items:center;gap:4px"><span style="width:10px;height:10px;border-radius:2px;background:#fef3c7;display:inline-block"></span>Partial</span>
+        <span style="display:inline-flex;align-items:center;gap:4px"><span style="width:10px;height:10px;border-radius:2px;background:#d1fae5;display:inline-block"></span>Full</span>
+        <span style="display:inline-flex;align-items:center;gap:4px"><span style="width:10px;height:10px;border-radius:2px;background:#fecaca;display:inline-block"></span>Over</span>
+        <span style="display:inline-flex;align-items:center;gap:4px"><span style="width:10px;height:10px;border-radius:2px;background:#bfdbfe;display:inline-block"></span>New</span>
+      </div>
+    </div>
+    ${!hasAny?`<div style="padding:12px;background:#f9fafb;border-radius:8px;font-size:12px;color:#9ca3af;text-align:center">✓ No existing allocations — all weeks free.</div>`:`<div style="overflow-x:auto"><table style="border-collapse:separate;border-spacing:2px;min-width:100%">${tableRows}</table></div>`}
+    ${over?`<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:6px;padding:6px 12px;font-size:12px;color:#b91c1c;margin-top:8px">⚠ ${over} week${over!==1?'s':''} would be overbooked with this new period</div>`:''}
+    ${pa.length?`<div style="margin-top:8px;font-size:11px;color:#9ca3af">${pa.length} existing assignment${pa.length!==1?'s':''}: ${[...new Set(pa.map(a=>a.workName))].join(', ')}</div>`:''}
+  </div>`;
 }
 
+// ── renderAdd (planning mode) ─────────────────────────────────────────────────
 function renderAdd(){
-  const r=role(), isPM=r==='Project Manager';
+  const isPM = role()==='Project Manager';
   if(!canPlan()) return `<div class="card"><div class="locked">🔒<span>Only Teamlead, Manager and Project Manager can add planning.</span></div></div>`;
-  const filtSvcs=state.baseServices.filter(s=>s.team===state.aTeam);
-  const availableProjects=isPM?pmProjects():state.projects;
-  const workField=state.addType==='Project'?`<div class="fg" style="max-width:300px"><label class="lbl">Project *</label><select class="sel" onchange="state.aProjId=this.value"><option value="">Select project…</option>${availableProjects.map(p=>`<option value="${p.id}"${state.aProjId==p.id?' selected':''}>${p.name}</option>`).join('')}</select>${!availableProjects.length?`<div class="hint">${isPM?'No projects assigned to you as PM yet.':'No projects yet — add one in the Projects tab.'}</div>`:''}</div>`:state.addType==='Base Service'?`<div class="fg" style="max-width:300px"><label class="lbl">Base service *</label><select class="sel" onchange="state.aService=this.value"><option value="">Select service…</option>${filtSvcs.map(s=>`<option value="${s.name}"${state.aService===s.name?' selected':''}>${s.name}</option>`).join('')}</select></div>`:`<div class="fg" style="max-width:300px"><label class="lbl">Work name *</label><input class="inp" placeholder="Name of work item" value="${state.aWork}" oninput="state.aWork=this.value" /></div>`;
-  const calendarSection=(!isPM&&state.aName.trim())?buildPersonCalendar(state.aName.trim(),state.aStart,state.aEnd):'';
-  return `<div class="card"><div class="card-hdr"><span class="card-title">📋 Planning mode — add entry</span></div><div class="card-body" style="display:flex;flex-direction:column;gap:24px">
-    <div class="add-sec"><div class="sec-title">Assignment type</div><div class="ttabs">${(isPM?['Project']:TYPES).map(t=>`<div class="ttab${state.addType===t?' on':''}" onclick="state.addType='${t}';state.aProjId='';state.aService='';state.aWork='';render()">${t}</div>`).join('')}</div>${isPM?`<div class="hint" style="margin-top:6px">As Project Manager you can plan resources for your own projects.</div>`:''}</div>
-    <div class="add-sec"><div class="sec-title">Resource details</div><div class="fgrid">${!isPM?`<div class="fg"><label class="lbl">Full name *</label>${peopleSelect('inp-aName',state.aName,"onPersonInput(this.value,'add');clearTimeout(_debounceTimer);render()",'','Select person…')}</div>`:''}<div class="fg"><label class="lbl">Team</label><select class="sel" onchange="state.aTeam=this.value;state.aService='';render()">${TEAMS.map(t=>`<option${state.aTeam===t?' selected':''}>${t}</option>`).join('')}</select></div><div class="fg"><label class="lbl">Country</label><select class="sel" onchange="state.aCountry=this.value"><option value="Sweden"${state.aCountry==='Sweden'?' selected':''}>Sweden</option><option value="Poland"${state.aCountry==='Poland'?' selected':''}>Poland</option></select></div><div class="fg"><label class="lbl">Skillset *</label><input class="inp" placeholder="e.g. React, DevOps" value="${state.aSkill}" oninput="state.aSkill=this.value" /></div><div class="fg"><label class="lbl">Level</label><select class="sel" onchange="state.aLevel=this.value"><option${state.aLevel==='Junior'?' selected':''}>Junior</option><option${state.aLevel==='Mid'?' selected':''}>Mid</option><option${state.aLevel==='Senior'?' selected':''}>Senior</option></select></div></div></div>
-    ${calendarSection}
-    <div class="add-sec"><div class="sec-title">Assignment</div>${workField}</div>
-    <div class="add-sec"><div class="sec-title">Period &amp; allocation</div><div class="frow"><div class="fg"><label class="lbl">From week</label><input class="inp narrow" type="number" min="1" max="52" value="${state.aStart}" onchange="state.aStart=+this.value;render()" /></div><div class="arrow">→</div><div class="fg"><label class="lbl">To week</label><input class="inp narrow" type="number" min="1" max="52" value="${state.aEnd}" onchange="state.aEnd=+this.value;render()" /></div><div class="fg"><label class="lbl">Allocation</label><div style="display:flex;align-items:center;gap:4px"><input class="inp narrow" type="number" min="0" max="200" value="${state.aPct}" oninput="state.aPct=+this.value" /><span style="font-size:13px;color:#6b7280">%</span></div></div></div><div class="hint">💡 These fields are also used by "Add period" in Detailed Planning.</div></div>
-    <div><button class="btn primary block" onclick="addAssignment()">✓ Add planning entry</button>${state.msg?`<div class="msg ${state.msg.ok?'ok':'err'}">${state.msg.text}</div>`:'<div class="msg"></div>'}</div>
-  </div></div>`;
+  const avail = isPM ? pmProjects() : state.projects;
+  const filtSvcs = state.baseServices.filter(s=>s.team===state.aTeam);
+
+  const workField = state.addType==='Project'
+    ? `<div class="fg" style="max-width:300px"><label class="lbl">Project *</label><select class="sel" onchange="state.aProjId=this.value"><option value="">Select project…</option>${avail.map(p=>`<option value="${p.id}"${state.aProjId==p.id?' selected':''}>${p.name}</option>`).join('')}</select>${!avail.length?`<div class="hint">${isPM?'No projects assigned to you as PM yet.':'No projects yet — add one in the Projects tab.'}</div>`:''}</div>`
+    : state.addType==='Base Service'
+    ? `<div class="fg" style="max-width:300px"><label class="lbl">Base service *</label><select class="sel" onchange="state.aService=this.value"><option value="">Select service…</option>${filtSvcs.map(s=>`<option value="${s.name}"${state.aService===s.name?' selected':''}>${s.name}</option>`).join('')}</select></div>`
+    : `<div class="fg" style="max-width:300px"><label class="lbl">Work name *</label><input class="inp" placeholder="Name of work item" value="${state.aWork}" oninput="state.aWork=this.value" /></div>`;
+
+  const calSection = (!isPM&&state.aName.trim()) ? buildPersonCalendar(state.aName.trim(), state.aStart, state.aEnd) : '';
+
+  return `<div class="card">
+    <div class="card-hdr"><span class="card-title">📋 Planning mode — add entry</span></div>
+    <div class="card-body" style="display:flex;flex-direction:column;gap:24px">
+      <div class="add-sec">
+        <div class="sec-title">Assignment type</div>
+        <div class="ttabs">${(isPM?['Project']:TYPES).map(t=>`<div class="ttab${state.addType===t?' on':''}" onclick="state.addType='${t}';state.aProjId='';state.aService='';state.aWork='';render()">${t}</div>`).join('')}</div>
+        ${isPM?`<div class="hint" style="margin-top:6px">As Project Manager you can plan resources for your own projects.</div>`:''}
+      </div>
+      <div class="add-sec">
+        <div class="sec-title">Resource details</div>
+        <div class="fgrid">
+          ${!isPM?`<div class="fg"><label class="lbl">Full name *</label>${peopleSelect('inp-aName',state.aName,"onPersonInput(this.value,'add');clearTimeout(_debounceTimer);render()",'','Select person…')}</div>`:''}
+          <div class="fg"><label class="lbl">Team</label><select class="sel" onchange="state.aTeam=this.value;state.aService='';render()">${TEAMS.map(t=>`<option${state.aTeam===t?' selected':''}>${t}</option>`).join('')}</select></div>
+          <div class="fg"><label class="lbl">Country</label><select class="sel" onchange="state.aCountry=this.value"><option value="Sweden"${state.aCountry==='Sweden'?' selected':''}>Sweden</option><option value="Poland"${state.aCountry==='Poland'?' selected':''}>Poland</option></select></div>
+          <div class="fg"><label class="lbl">Skillset *</label><input class="inp" placeholder="e.g. React, DevOps" value="${state.aSkill}" oninput="state.aSkill=this.value" /></div>
+          <div class="fg"><label class="lbl">Level</label><select class="sel" onchange="state.aLevel=this.value">${['Junior','Mid','Senior'].map(l=>`<option${state.aLevel===l?' selected':''}>${l}</option>`).join('')}</select></div>
+        </div>
+      </div>
+      ${calSection}
+      <div class="add-sec"><div class="sec-title">Assignment</div>${workField}</div>
+      <div class="add-sec">
+        <div class="sec-title">Period &amp; allocation</div>
+        <div class="frow">
+          <div class="fg"><label class="lbl">From week</label><input class="inp narrow" type="number" min="1" max="52" value="${state.aStart}" onchange="state.aStart=+this.value;render()" /></div>
+          <div class="arrow">→</div>
+          <div class="fg"><label class="lbl">To week</label><input class="inp narrow" type="number" min="1" max="52" value="${state.aEnd}" onchange="state.aEnd=+this.value;render()" /></div>
+          <div class="fg"><label class="lbl">Allocation</label><div style="display:flex;align-items:center;gap:4px"><input class="inp narrow" type="number" min="0" max="200" value="${state.aPct}" oninput="state.aPct=+this.value" /><span style="font-size:13px;color:#6b7280">%</span></div></div>
+        </div>
+        <div class="hint">💡 These fields are also used by "Add period" in Detailed Planning.</div>
+      </div>
+      <div>
+        <button class="btn primary block" onclick="addAssignment()">✓ Add planning entry</button>
+        ${state.msg?`<div class="msg ${state.msg.ok?'ok':'err'}">${state.msg.text}</div>`:'<div class="msg"></div>'}
+      </div>
+    </div>
+  </div>`;
 }
 
-function deleteProject(id){ if(!confirm('Delete this project? Planning entries linked to it will not be deleted.')) return; state.projects=state.projects.filter(p=>p.id!==id); render(); }
-function addProject(){ if(!state.pName.trim()) return; state.projects.push({id:Date.now(),name:state.pName.trim(),projectManager:state.pPm.trim(),startDate:state.pStart,endDate:state.pEnd,description:state.pDesc.trim()}); state.pName=''; state.pPm=''; state.pStart=''; state.pEnd=''; state.pDesc=''; render(); }
-function addSvc(){ if(!state.sName.trim()) return; state.baseServices.push({name:state.sName.trim(),team:state.sTeam,targetPct:state.sTargetPct||0}); state.sName=''; state.sTargetPct=0; render(); }
-function editSvc(name){ const n=prompt('New name:',name); if(!n?.trim()) return; state.baseServices=state.baseServices.map(s=>s.name===name?{...s,name:n.trim()}:s); render(); }
-function delSvc(name){ state.baseServices=state.baseServices.filter(s=>s.name!==name); render(); }
-
-function getWorkName(){
-  if(state.addType==='Project'){ const p=state.projects.find(p=>p.id==state.aProjId); return p?p.name:''; }
-  if(state.addType==='Base Service') return state.aService;
-  return state.aWork;
-}
-
-function addAssignment(){
-  if(!canPlan()){ flashMsg('You do not have permission to add planning.',false); return; }
-  const isPM2=role()==='Project Manager';
-  if(!isPM2&&!state.aName.trim()){ flashMsg('Please fill in the name.',false); return; }
-  if(!state.aSkill.trim()){ flashMsg('Please fill in the skillset.',false); return; }
-  if(state.addType==='Project'&&!state.aProjId){ flashMsg('Please select a project.',false); return; }
-  if(state.addType==='Base Service'&&!state.aService){ flashMsg('Please select a base service.',false); return; }
-  if((state.addType==='Charge On'||state.addType==='Internal Initiative')&&!state.aWork.trim()){ flashMsg('Please enter a work name.',false); return; }
-  const wn=getWorkName();
-  const period={id:Date.now(),startWeek:state.aStart,endWeek:state.aEnd,allocationPercent:state.aPct};
-  const ei=state.assignments.findIndex(a=>a.name.trim().toLowerCase()===state.aName.trim().toLowerCase()&&a.type===state.addType&&a.workName.trim().toLowerCase()===wn.trim().toLowerCase());
-  if(ei>=0){ state.assignments[ei].periods.push(period); state.assignments[ei].confirmed=false; state.assignments[ei].confirmedBy=null; state.assignments[ei].committed=false; state.assignments[ei].committedBy=null; }
-  else { const assignName=isPM2?('__pm_planned__'+Date.now()):state.aName.trim(); state.assignments.push({id:Date.now(),name:assignName,team:state.aTeam,country:state.aCountry,skillset:state.aSkill.trim(),level:state.aLevel,type:state.addType,workName:wn,projectId:state.addType==='Project'?+state.aProjId:null,periods:[period],confirmed:false,confirmedBy:null,committed:false,committedBy:null,pmPlanned:isPM2}); }
-  flashMsg('Entry added!',true);
-  state.aName=''; state.aSkill=''; state.aProjId=''; state.aService=''; state.aWork=''; state.aStart=1; state.aEnd=3; state.aPct=80;
-}
-
-function addPeriod(ai){ const period={id:Date.now(),startWeek:state.aStart,endWeek:state.aEnd,allocationPercent:state.aPct}; state.assignments[ai].periods.push(period); state.assignments[ai].confirmed=false; state.assignments[ai].confirmedBy=null; state.assignments[ai].committed=false; state.assignments[ai].committedBy=null; render(); }
-function uncommitA(ai){ state.assignments[ai].committed=false; state.assignments[ai].committedBy=null; state.assignments[ai].confirmed=false; state.assignments[ai].confirmedBy=null; render(); }
-function commitA(ai){ state.assignments[ai].committed=true; state.assignments[ai].committedBy=userName(); state.assignments[ai].confirmed=true; state.assignments[ai].confirmedBy=userName(); render(); }
-function delAssignment(ai){ state.assignments.splice(ai,1); render(); }
-function delPeriod(ai,pi){
-  if(typeof pi==='number'&&pi<state.assignments[ai].periods.length) state.assignments[ai].periods.splice(pi,1);
-  else state.assignments[ai].periods=state.assignments[ai].periods.filter(p=>p.id!==pi);
-  state.assignments[ai].confirmed=false; state.assignments[ai].confirmedBy=null;
-  state.assignments[ai].committed=false; state.assignments[ai].committedBy=null;
-  render();
-}
-
-function autoRegisterAllTeamMembers(){
-  state.assignments.forEach(a=>{
-    if(!a.name||!a.team) return;
-    const key=a.name.trim().toLowerCase(), team=a.team.trim();
-    if(!state.teamMembers.some(m=>m.name.trim().toLowerCase()===key&&m.team===team))
-      state.teamMembers.push({id:Date.now()+Math.random(),name:a.name.trim(),team,country:a.country||'Sweden',skillset:a.skillset||'',level:a.level||'Junior'});
-  });
-}
-
-autoRegisterAllTeamMembers();
-if(saved?.userName) document.getElementById('user-name').value=saved.userName;
-if(saved?.role) document.getElementById('role-sel').value=saved.role;
+// ── Startup ───────────────────────────────────────────────────────────────────
+autoRegisterTeamMembers();
+if(saved?.userName) document.getElementById('user-name').value = saved.userName;
+if(saved?.role)     document.getElementById('role-sel').value  = saved.role;
 render();

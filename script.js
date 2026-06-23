@@ -175,10 +175,28 @@ function getAlloc(a, w){
     .reduce((s, p) => s + p.allocationPercent, 0);
 }
 
+// Returns the effective allocation for an assignment in a given week.
+// For Base Services: if the person has other work that week, the base service
+// is automatically reduced so total never exceeds what's planned elsewhere.
+// Example: Anna is 10% on App Support all year. In W26 she's 100% on a project.
+// getEffectiveAlloc(appSupportAssignment, W26) → 0
+// getEffectiveAlloc(appSupportAssignment, W30) → 10 (no project that week)
+function getEffectiveAlloc(a, w){
+  const raw = getAlloc(a, w);
+  if(!raw || a.type !== 'Base Service') return raw;
+
+  // Sum all OTHER assignments for this person this week
+  const otherAlloc = visibleAssignments()
+    .filter(x => x !== a && x.name.toLowerCase() === a.name.toLowerCase())
+    .reduce((s, x) => s + getAlloc(x, w), 0);
+
+  return Math.max(0, Math.min(raw, 100 - otherAlloc));
+}
+
 function getTotalAlloc(name, w){
   return visibleAssignments()
     .filter(a => a.name.toLowerCase() === name.toLowerCase())
-    .reduce((s, a) => s + getAlloc(a, w), 0);
+    .reduce((s, a) => s + getEffectiveAlloc(a, w), 0);
 }
 
 function getTeamlead(name){
@@ -211,7 +229,7 @@ function getAllPeople(){
 function getSvcAlloc(svcName, w){
   return state.assignments
     .filter(a => a.type === 'Base Service' && a.workName === svcName)
-    .reduce((s, a) => s + getAlloc(a, w), 0);
+    .reduce((s, a) => s + getEffectiveAlloc(a, w), 0);
 }
 
 function calcSvcDebt(svc){
@@ -284,6 +302,11 @@ function visibleWeeks(){ return state.showAllWeeks ? WEEKS : WEEKS.slice(CURRENT
 function wkHdr(w){ return `<th class="wk">W${w}</th>`; }
 function wkCell(w, alloc){
   return `<td class="wk ${wClass(alloc)}">${alloc>0 ? alloc+'%' : '–'}</td>`;
+}
+// For per-assignment rows (not person totals) — uses effective alloc
+function wkCellA(a, w){
+  const eff = getEffectiveAlloc(a, w);
+  return `<td class="wk ${wClass(eff)}">${eff>0 ? eff+'%' : '–'}</td>`;
 }
 
 function weekRangeToggle(){
@@ -1295,7 +1318,7 @@ function renderProjectDetail(){
           const statusBadge = a.committed
             ? `<span class="badge b-committed" style="white-space:nowrap">✓ Committed</span><div style="font-size:10px;color:#9ca3af;margin-bottom:4px">${a.committedBy}</div>${ce?`<button class="btn danger sm" style="font-size:10px;padding:2px 6px" onclick="uncommitA(${idx})">↩ Uncommit</button>`:''}`
             : `<span class="badge b-plan">Planned</span>${ce?`<div style="margin-top:4px"><button class="btn primary sm" onclick="commitA(${idx})">🔒 Commit</button></div>`:''}`;
-          const weekCells = wks.map(w => wkCell(w, getAlloc(a,w))).join('');
+          const weekCells = wks.map(w => wkCell(w, getEffectiveAlloc(a,w))).join('');
           const periodRows = a.periods.map((p,pi) => {
             const pW = wks.map(w => {
               const inR = w>=p.startWeek&&w<=p.endWeek;
@@ -1360,7 +1383,7 @@ function renderTeamDetail(){
       const dot   = a.committed
         ? `<span style="background:#d1fae5;color:#065f46;padding:1px 7px;border-radius:20px;font-size:10px;font-weight:700;white-space:nowrap">✓ Committed</span>${ce?`<button class="btn danger sm" style="font-size:10px;padding:1px 6px;margin-left:4px" onclick="uncommitA(${idx})">↩</button>`:''}`
         : `<span style="background:#fef3c7;color:#92400e;padding:1px 7px;border-radius:20px;font-size:10px;font-weight:700;white-space:nowrap">⏳ Planned</span>${ce?`<button class="btn primary sm" style="font-size:10px;padding:1px 6px;margin-left:4px" onclick="commitA(${idx})">🔒 Commit</button>`:''}`;
-      const wCells = wks.map(w=>{ const al=getAlloc(a,w); return `<td class="wk ${wCls(al)}" style="font-size:10px">${al>0?al+'%':''}</td>`; }).join('');
+      const wCells = wks.map(w=>{ const al=getEffectiveAlloc(a,w); return `<td class="wk ${wCls(al)}" style="font-size:10px">${al>0?al+'%':''}</td>`; }).join('');
       return `<tr style="background:#fafafa">
         <td style="padding:5px 12px 5px 28px;font-size:12px;color:#374151;white-space:nowrap">${label}</td>
         <td style="padding:5px 12px;font-size:11px;color:#9ca3af">${a.type}</td>
@@ -1689,7 +1712,7 @@ function renderPlanning(){
       ${WEEKS.map(w=>wkHdr(w)).join('')}<th>Status</th><th style="min-width:190px">Periods</th>
     </tr></thead><tbody>${vas.map((a,ai) => {
       const dn = a.name&&a.name.startsWith('__pm_planned__') ? (a.committed?a.name:'No name') : (!a.committed&&role()==='Project Manager'?'— Planned resource —':a.name);
-      const wks = WEEKS.map(w=>wkCell(w,getAlloc(a,w))).join('');
+      const wks = WEEKS.map(w=>wkCell(w,getEffectiveAlloc(a,w))).join('');
       const periods = a.periods.map((p,pi)=>`<div style="display:flex;align-items:center;gap:4px;margin-bottom:4px"><span class="ptag">W${p.startWeek}–${p.endWeek}: ${p.allocationPercent}%</span>${ce?`<button class="btn danger sm" onclick="delPeriod(${ai},${pi})">🗑</button>`:''}</div>`).join('');
       const actions = ce?`<div style="display:flex;flex-direction:column;gap:4px;margin-top:6px"><button class="btn sm" onclick="addPeriod(${ai})">+ Add period</button><button class="btn danger sm" onclick="delAssignment(${ai})">🗑 Delete</button></div>`:'';
       const status = a.committed

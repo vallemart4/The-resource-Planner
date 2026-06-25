@@ -346,6 +346,9 @@ let state = {
   // Filters (overview)
   fTeam:'', fSkill:'', fLevel:'', fName:'', fAssignment:'', fStatus:'',
 
+  // Filter (team detail) — set of selected names, empty = show all
+  teamFilterNames: new Set(),
+
   // UI toggles
   dashAllocRange: 8,
   showAllWeeks: false,
@@ -642,6 +645,7 @@ function openTeam(teamName){
   if(role()==='Team Member') return;
   state.selectedTeam = teamName;
   state.tab = 'team-detail';
+  state.teamFilterNames = new Set(); // reset filter on team change
   document.getElementById('tab-title').textContent = teamName + ' Team';
   document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
   const idMap = {Development:'nav-dev', Platform:'nav-plat', PMO:'nav-pmo'};
@@ -758,6 +762,12 @@ function addTeamMember(){
   render();
 }
 function removeTeamMember(id){ state.teamMembers = state.teamMembers.filter(m => m.id!==id); render(); }
+
+function toggleTeamFilter(name){
+  if(state.teamFilterNames.has(name)) state.teamFilterNames.delete(name);
+  else state.teamFilterNames.add(name);
+  render();
+}
 
 function startEditAssignment(idx){
   if(!canEdit()) return;
@@ -1628,8 +1638,26 @@ function renderTeamDetail(){
       peopleMap.get(key).assignments.push(a);
   });
   const people = [...peopleMap.values()];
+  const filteredPeople = state.teamFilterNames.size > 0
+    ? people.filter(p => state.teamFilterNames.has(p.name))
+    : people;
   const totalCommitted = people.reduce((s,p)=>s+p.assignments.filter(a=>a.committed).length, 0);
   const totalPlanned   = people.reduce((s,p)=>s+p.assignments.filter(a=>!a.committed).length, 0);
+
+  // Person filter bar
+  const filterBar = `<div style="padding:12px 18px;border-bottom:1px solid #f3f4f6;display:flex;flex-wrap:wrap;gap:8px;align-items:center">
+    <span style="font-size:11px;font-weight:700;color:#9ca3af;text-transform:uppercase;letter-spacing:.05em;white-space:nowrap">Filter people:</span>
+    ${people.map(p => {
+      const active = state.teamFilterNames.has(p.name);
+      return `<button onclick="toggleTeamFilter('${p.name.replace(/'/g,"\\'")}');event.stopPropagation()"
+        style="padding:3px 12px;border-radius:20px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;border:1px solid ${active?'#1D9E75':'#e5e7eb'};background:${active?'#1D9E75':'#fff'};color:${active?'#fff':'#6b7280'};transition:all .15s">
+        ${p.name}
+      </button>`;
+    }).join('')}
+    ${state.teamFilterNames.size > 0
+      ? `<button onclick="state.teamFilterNames=new Set();render()" style="padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;border:1px solid #fca5a5;background:#fef2f2;color:#b91c1c">✕ Clear filter (${state.teamFilterNames.size})</button>`
+      : ''}
+  </div>`;
 
   function ptw(person, w){ return person.assignments.filter(a=>a.committed).reduce((s,a)=>s+getAlloc(a,w),0); }
   function wCls(t){ return t>100?'ao':t===100?'af':t>0?'ap':''; }
@@ -1695,7 +1723,7 @@ function renderTeamDetail(){
   }
 
   const totals = WEEKS.map(w => people.reduce((s,p)=>s+ptw(p,w),0)); // unused but kept for future
-  const memberRows = people.map(person => {
+  const memberRows = filteredPeople.map(person => {
     const allT   = WEEKS.map(w=>ptw(person,w));
     const wCells = wks.map(w=>{ const t=allT[WEEKS.indexOf(w)]; return `<td class="wk ${wCls(t)}" style="font-weight:700">${t>0?t+'%':'–'}</td>`; }).join('');
     const mbadge = person.registered
@@ -1812,6 +1840,7 @@ function renderTeamDetail(){
         <div style="display:flex;align-items:center;gap:12px">${weekRangeToggle()}<span class="card-sub">Green = person total · White = per-assignment</span></div>
       </div>
       ${!people.length ? `<div class="empty"><span class="empty-icon">👥</span>No team members in ${teamName} yet.</div>` : `
+      ${filterBar}
       <div class="tbl-wrap"><table>
         <thead><tr><th>Name</th><th>Skill</th><th>Level</th><th>Country</th><th>Reporting</th><th>Assignments</th>${wks.map(w=>wkHdr(w)).join('')}${ce?'<th></th>':''}</tr></thead>
         <tbody>${memberRows}</tbody>

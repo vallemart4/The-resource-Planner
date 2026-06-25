@@ -1005,7 +1005,7 @@ function renderDashboard(){
     : [...new Set(state.assignments.map(a=>a.name))];
 
   const activeNow      = allPeople.filter(n => ptw(n,cw) > 0);
-  const overbookedNow  = allPeople.filter(n => ptw(n,cw) > 100);
+  const overbookedNow  = allPeople.filter(n => ptw(n,cw) > 100 && !n.trim().toLowerCase().startsWith('nn'));
   const allRegistered  = isTM
     ? [userName().trim()].filter(Boolean)
     : [...new Set([...state.teamMembers.map(m=>m.name), ...state.assignments.map(a=>a.name)])];

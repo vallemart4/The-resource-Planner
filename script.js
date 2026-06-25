@@ -99,6 +99,166 @@ function clearData(){
   localStorage.removeItem('rp_data'); location.reload();
 }
 
+// ── Excel import ──────────────────────────────────────────────────────────────
+function importExcel(){
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = '.xlsx,.xls,.csv';
+  input.onchange = async e => {
+    const file = e.target.files[0];
+    if(!file) return;
+
+    // Load SheetJS from CDN
+    if(!window.XLSX){
+      await new Promise((res, rej) => {
+        const s = document.createElement('script');
+        s.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+        s.onload = res; s.onerror = rej;
+        document.head.appendChild(s);
+      });
+    }
+
+    const reader = new FileReader();
+    reader.onload = ev => {
+      try {
+        const wb   = XLSX.read(ev.target.result, {type:'binary'});
+        const ws   = wb.Sheets[wb.SheetNames[0]];
+        const rows = XLSX.utils.sheet_to_json(ws, {header:1, defval:''});
+
+        // Find the header row — it contains "Name" in col 0 and week numbers
+        // Row 0 has month names, Row 1 has week numbers (2,3,4..52,1...)
+        // Row 2+ are data rows
+        const weekRow  = rows[1]; // e.g. ['','','','','','','','','This Week %', 2, 22, 3, 4...]
+        const dataRows = rows.slice(2);
+
+        // Build a map of column index → week number
+        // Week columns start at index 9 (after Name,Role,Area,TL,Status,Assignment,Type,Comment,ThisWeek%)
+        const FIRST_WEEK_COL = 9;
+        const weekMap = {}; // colIndex → weekNum
+        for(let c = FIRST_WEEK_COL; c < weekRow.length; c++){
+          const v = weekRow[c];
+          const n = parseInt(v);
+          if(n >= 1 && n <= 52 && !isNaN(n)){
+            weekMap[c] = n;
+          }
+        }
+
+        const newProjects   = [];
+        const newAssignments= [];
+        const newTeamMembers= [];
+        const seenProjects  = new Set();
+        const seenMembers   = new Set();
+
+        dataRows.forEach(row => {
+          const name       = (row[0]||'').toString().trim().replace(/^"+|"+$/g,'');
+          const role       = (row[1]||'').toString().trim();
+          const area       = (row[2]||'').toString().trim();
+          const tl         = (row[3]||'').toString().trim();
+          const status     = (row[4]||'').toString().trim().toLowerCase();
+          const assignment = (row[5]||'').toString().trim();
+          const type       = (row[6]||'').toString().trim();
+
+          if(!assignment) return; // skip empty rows
+
+          // Determine assignment type
+          let appType = 'Project';
+          if(type.toLowerCase().includes('base service')) appType = 'Base Service';
+          else if(type.toLowerCase().includes('charge on')) appType = 'Charge On';
+          else if(type.toLowerCase().includes('initiative')) appType = 'Internal Initiative';
+
+          // Add project if it's a project type and not already added
+          if(appType === 'Project' && !seenProjects.has(assignment)){
+            seenProjects.add(assignment);
+            newProjects.push({id: Date.now() + Math.random(), name: assignment, projectManager:'', startDate:'', endDate:'', description:''});
+          }
+
+          // Add team member if name is known and not already added
+          const memberKey = name.toLowerCase();
+          if(name && name !== 'nn' && !memberKey.startsWith('nn ') && !seenMembers.has(memberKey)){
+            seenMembers.add(memberKey);
+            newTeamMembers.push({
+              id: Date.now() + Math.random(),
+              name, team: area||'Development',
+              country: 'Sweden',
+              skillset: role||'',
+              level: 'Mid',
+              teamlead: tl, manager: tl,
+            });
+          }
+
+          // Build periods from week columns — group consecutive weeks with same %
+          const weekAllocs = []; // [{week, pct}]
+          for(const [col, week] of Object.entries(weekMap)){
+            const raw = (row[parseInt(col)]||'').toString().replace('%','').trim();
+            const pct = parseFloat(raw);
+            if(!isNaN(pct) && pct > 0){
+              weekAllocs.push({week: parseInt(week), pct});
+            }
+          }
+
+          if(!weekAllocs.length) return; // no allocation, skip
+
+          // Group into periods (consecutive weeks with same %)
+          weekAllocs.sort((a,b) => a.week - b.week);
+          const periods = [];
+          let pStart = weekAllocs[0].week;
+          let pPct   = weekAllocs[0].pct;
+          let pPrev  = weekAllocs[0].week;
+
+          for(let i = 1; i < weekAllocs.length; i++){
+            const {week, pct} = weekAllocs[i];
+            if(week === pPrev + 1 && pct === pPct){
+              pPrev = week;
+            } else {
+              periods.push({id: Date.now()+Math.random(), startWeek: pStart, endWeek: pPrev, allocationPercent: pPct});
+              pStart = week; pPct = pct; pPrev = week;
+            }
+          }
+          periods.push({id: Date.now()+Math.random(), startWeek: pStart, endWeek: pPrev, allocationPercent: pPct});
+
+          const committed = status === 'commited' || status === 'committed';
+
+          newAssignments.push({
+            id: Date.now() + Math.random(),
+            name: name || 'NN',
+            team: area || 'Development',
+            country: 'Sweden',
+            skillset: role || '',
+            level: 'Mid',
+            type: appType,
+            workName: assignment,
+            projectId: null,
+            periods,
+            committed,
+            committedBy: committed ? tl : null,
+            confirmed: committed,
+            confirmedBy: committed ? tl : null,
+          });
+        });
+
+        // Merge into state — don't overwrite existing data
+        const existingProjectNames = new Set(state.projects.map(p => p.name));
+        newProjects.forEach(p => { if(!existingProjectNames.has(p.name)) state.projects.push(p); });
+
+        const existingMemberNames = new Set(state.teamMembers.map(m => m.name.toLowerCase()));
+        newTeamMembers.forEach(m => { if(!existingMemberNames.has(m.name.toLowerCase())) state.teamMembers.push(m); });
+
+        newAssignments.forEach(a => state.assignments.push(a));
+
+        saveData();
+        flashMsg(`✓ Imported ${newAssignments.length} assignments, ${newProjects.filter(p=>!state.projects.find(x=>x.name===p.name)).length} projects`, true);
+        render();
+
+      } catch(err) {
+        console.error(err);
+        alert('Could not read Excel file: ' + err.message);
+      }
+    };
+    reader.readAsBinaryString(file);
+  };
+  input.click();
+}
+
 // ── State ─────────────────────────────────────────────────────────────────────
 function loadSaved(){
   try { const r=localStorage.getItem('rp_data'); if(r) return JSON.parse(r); } catch(e){}

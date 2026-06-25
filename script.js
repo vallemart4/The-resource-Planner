@@ -25,7 +25,7 @@ const DEFAULT_SERVICES = [
 ];
 
 // ── Persistence — API + localStorage fallback ─────────────────────────────
-const API_URL = 'http://resource-planner-api-sgit-theresourceplanner.apps.openshift-dev.stenacloud.com';
+const API_URL = 'https://resource-planner-api-sgit-theresourceplanner.apps.openshift-dev.stenacloud.com';
 
 async function loadFromApi(){
   try {

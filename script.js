@@ -336,6 +336,10 @@ let state = {
   emName:'', emCountry:'Sweden', emSkill:'', emLevel:'Junior',
   emTeamlead:'', emManager:'',
 
+  // Edit-assignment form (in team detail)
+  editingAssignmentId: null,
+  eaStart: 1, eaEnd: 52, eaPct: 50,
+
   // Inbox form
   iTitle:'', iDesc:'', iPriority:'Medium',
 
@@ -754,6 +758,38 @@ function addTeamMember(){
   render();
 }
 function removeTeamMember(id){ state.teamMembers = state.teamMembers.filter(m => m.id!==id); render(); }
+
+function startEditAssignment(idx){
+  if(!canEdit()) return;
+  if(state.editingAssignmentId === idx){ state.editingAssignmentId=null; render(); return; }
+  const a = state.assignments[idx];
+  if(!a) return;
+  state.editingAssignmentId = idx;
+  // Pre-fill with first period values
+  if(a.periods.length){
+    state.eaStart = a.periods[0].startWeek;
+    state.eaEnd   = a.periods[a.periods.length-1].endWeek;
+    state.eaPct   = a.periods[0].allocationPercent;
+  }
+  state.editingMemberId = null; // close any open member editor
+  render();
+}
+
+function saveAssignmentEdit(idx){
+  const startEl = document.getElementById('ea-start-'+idx);
+  const endEl   = document.getElementById('ea-end-'+idx);
+  const pctEl   = document.getElementById('ea-pct-'+idx);
+  const start = parseInt(startEl?.value) || state.eaStart;
+  const end   = parseInt(endEl?.value)   || state.eaEnd;
+  const pct   = parseInt(pctEl?.value)   || state.eaPct;
+  if(start > end){ flashMsg('Start week must be before end week.', false); return; }
+  // Replace all periods with one merged period
+  state.assignments[idx].periods = [{id:Date.now(), startWeek:start, endWeek:end, allocationPercent:pct}];
+  state.assignments[idx].committed = false;
+  state.assignments[idx].committedBy = null;
+  state.editingAssignmentId = null;
+  flashMsg('Assignment updated!', true);
+}
 
 function startEditMember(id){
   if(!canEdit()) return;
@@ -1589,16 +1625,44 @@ function renderTeamDetail(){
     return person.assignments.map(a => {
       const label = r==='Project Manager'&&!a.committed ? '— Planned —' : a.workName;
       const idx   = state.assignments.indexOf(a);
+      const isEditingA = ce && state.editingAssignmentId === idx;
       const dot   = a.committed
         ? `<span style="background:#d1fae5;color:#065f46;padding:1px 7px;border-radius:20px;font-size:10px;font-weight:700;white-space:nowrap">✓ Committed</span>${ce?`<button class="btn danger sm" style="font-size:10px;padding:1px 6px;margin-left:4px" onclick="uncommitA(${idx})">↩</button>`:''}`
         : `<span style="background:#fef3c7;color:#92400e;padding:1px 7px;border-radius:20px;font-size:10px;font-weight:700;white-space:nowrap">⏳ Planned</span>${ce?`<button class="btn primary sm" style="font-size:10px;padding:1px 6px;margin-left:4px" onclick="commitA(${idx})">🔒 Commit</button>`:''}`;
       const wCells = wks.map(w=>{ const al=getEffectiveAlloc(a,w); return `<td class="wk ${wCls(al)}" style="font-size:10px">${al>0?al+'%':''}</td>`; }).join('');
-      return `<tr style="background:#fafafa">
-        <td style="padding:5px 12px 5px 28px;font-size:12px;color:#374151;white-space:nowrap">${label}</td>
+
+      const editPanel = isEditingA ? `<tr style="background:#f0fdf8;border-bottom:2px solid #e5e7eb">
+        <td colspan="${6+wks.length}" style="padding:0">
+          <div style="padding:12px 16px;display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap">
+            <div style="font-size:11px;font-weight:700;color:#0f6e56;align-self:center;white-space:nowrap">✏ ${a.workName}</div>
+            <div class="fg"><label class="lbl">From week</label>
+              <input class="inp narrow" type="number" min="1" max="52" id="ea-start-${idx}" value="${state.eaStart}" oninput="state.eaStart=+this.value" />
+            </div>
+            <div style="padding-bottom:8px;color:#9ca3af">→</div>
+            <div class="fg"><label class="lbl">To week</label>
+              <input class="inp narrow" type="number" min="1" max="52" id="ea-end-${idx}" value="${state.eaEnd}" oninput="state.eaEnd=+this.value" />
+            </div>
+            <div class="fg"><label class="lbl">Allocation %</label>
+              <input class="inp narrow" type="number" min="0" max="200" id="ea-pct-${idx}" value="${state.eaPct}" oninput="state.eaPct=+this.value" />
+            </div>
+            <div style="display:flex;gap:6px;padding-bottom:4px">
+              <button class="btn primary sm" onclick="saveAssignmentEdit(${idx})">✓ Save</button>
+              <button class="btn sm" onclick="state.editingAssignmentId=null;render()">✕ Cancel</button>
+              ${a.committed
+                ? `<button class="btn danger sm" onclick="uncommitA(${idx})">↩ Uncommit</button>`
+                : `<button class="btn primary sm" onclick="commitA(${idx})">🔒 Commit</button>`}
+              <button class="btn danger sm" onclick="if(confirm('Delete this assignment?')){delAssignment(${idx})}">🗑 Delete</button>
+            </div>
+          </div>
+        </td>
+      </tr>` : '';
+
+      return `<tr style="background:#fafafa;${ce?'cursor:pointer':''}" ${ce?`onclick="startEditAssignment(${idx})"`:''}>
+        <td style="padding:5px 12px 5px 28px;font-size:12px;color:#374151;white-space:nowrap">${label}${ce?` <span style="font-size:10px;color:#9ca3af">✏</span>`:''}</td>
         <td style="padding:5px 12px;font-size:11px;color:#9ca3af">${a.type}</td>
         <td colspan="3" style="padding:5px 12px;white-space:nowrap">${dot}</td>
         <td style="padding:5px 12px"></td>
-        ${wCells}${ce?`<td style="padding:5px 8px"></td>`:''}</tr>`;
+        ${wCells}${ce?`<td style="padding:5px 8px"></td>`:''}</tr>${editPanel}`;
     }).join('');
   }
 

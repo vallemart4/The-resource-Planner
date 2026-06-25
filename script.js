@@ -398,9 +398,9 @@ function getEffectiveAlloc(a, w){
   const raw = getAlloc(a, w);
   if(!raw || a.type !== 'Base Service') return raw;
 
-  // Sum all OTHER assignments for this person this week
+  // Only reduce based on OTHER committed assignments
   const otherAlloc = visibleAssignments()
-    .filter(x => x !== a && x.name.toLowerCase() === a.name.toLowerCase())
+    .filter(x => x !== a && x.name.toLowerCase() === a.name.toLowerCase() && x.committed)
     .reduce((s, x) => s + getAlloc(x, w), 0);
 
   return Math.max(0, Math.min(raw, 100 - otherAlloc));
@@ -408,7 +408,7 @@ function getEffectiveAlloc(a, w){
 
 function getTotalAlloc(name, w){
   return visibleAssignments()
-    .filter(a => a.name.toLowerCase() === name.toLowerCase())
+    .filter(a => a.name.toLowerCase() === name.toLowerCase() && a.committed)
     .reduce((s, a) => s + getEffectiveAlloc(a, w), 0);
 }
 
@@ -773,6 +773,23 @@ function startEditAssignment(idx){
   }
   state.editingMemberId = null; // close any open member editor
   render();
+}
+
+function addPeriodToAssignment(idx){
+  const startEl = document.getElementById('ea-start-'+idx);
+  const endEl   = document.getElementById('ea-end-'+idx);
+  const pctEl   = document.getElementById('ea-pct-'+idx);
+  const start = parseInt(startEl?.value) || state.eaStart;
+  const end   = parseInt(endEl?.value)   || state.eaEnd;
+  const pct   = parseInt(pctEl?.value)   || state.eaPct;
+  if(start > end){ flashMsg('Start week must be before end week.', false); return; }
+  state.assignments[idx].periods.push({id:Date.now(), startWeek:start, endWeek:end, allocationPercent:pct});
+  state.assignments[idx].committed = false;
+  state.assignments[idx].committedBy = null;
+  // Update state for next period — suggest starting after this one
+  state.eaStart = Math.min(end + 1, 52);
+  state.eaEnd   = Math.min(end + 4, 52);
+  flashMsg('Period added!', true);
 }
 
 function saveAssignmentEdit(idx){
@@ -1614,7 +1631,7 @@ function renderTeamDetail(){
   const totalCommitted = people.reduce((s,p)=>s+p.assignments.filter(a=>a.committed).length, 0);
   const totalPlanned   = people.reduce((s,p)=>s+p.assignments.filter(a=>!a.committed).length, 0);
 
-  function ptw(person, w){ return person.assignments.reduce((s,a)=>s+getAlloc(a,w),0); }
+  function ptw(person, w){ return person.assignments.filter(a=>a.committed).reduce((s,a)=>s+getAlloc(a,w),0); }
   function wCls(t){ return t>100?'ao':t===100?'af':t>0?'ap':''; }
 
   const wks = visibleWeeks();
@@ -1633,25 +1650,36 @@ function renderTeamDetail(){
 
       const editPanel = isEditingA ? `<tr style="background:#f0fdf8;border-bottom:2px solid #e5e7eb">
         <td colspan="${6+wks.length}" style="padding:0">
-          <div style="padding:12px 16px;display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap">
-            <div style="font-size:11px;font-weight:700;color:#0f6e56;align-self:center;white-space:nowrap">✏ ${a.workName}</div>
-            <div class="fg"><label class="lbl">From week</label>
-              <input class="inp narrow" type="number" min="1" max="52" id="ea-start-${idx}" value="${state.eaStart}" oninput="state.eaStart=+this.value" />
-            </div>
-            <div style="padding-bottom:8px;color:#9ca3af">→</div>
-            <div class="fg"><label class="lbl">To week</label>
-              <input class="inp narrow" type="number" min="1" max="52" id="ea-end-${idx}" value="${state.eaEnd}" oninput="state.eaEnd=+this.value" />
-            </div>
-            <div class="fg"><label class="lbl">Allocation %</label>
-              <input class="inp narrow" type="number" min="0" max="200" id="ea-pct-${idx}" value="${state.eaPct}" oninput="state.eaPct=+this.value" />
-            </div>
-            <div style="display:flex;gap:6px;padding-bottom:4px">
-              <button class="btn primary sm" onclick="saveAssignmentEdit(${idx})">✓ Save</button>
-              <button class="btn sm" onclick="state.editingAssignmentId=null;render()">✕ Cancel</button>
-              ${a.committed
-                ? `<button class="btn danger sm" onclick="uncommitA(${idx})">↩ Uncommit</button>`
-                : `<button class="btn primary sm" onclick="commitA(${idx})">🔒 Commit</button>`}
-              <button class="btn danger sm" onclick="if(confirm('Delete this assignment?')){delAssignment(${idx})}">🗑 Delete</button>
+          <div style="padding:12px 16px">
+            <div style="font-size:11px;font-weight:700;color:#0f6e56;margin-bottom:10px">✏ ${a.workName}</div>
+            
+            ${a.periods.length ? `<div style="margin-bottom:10px">
+              <div style="font-size:10px;font-weight:700;color:#9ca3af;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Current periods</div>
+              <div style="display:flex;flex-wrap:wrap;gap:6px">
+                ${a.periods.map((p,pi)=>`<span style="background:#e0f2fe;color:#075985;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600">W${p.startWeek}–${p.endWeek}: ${p.allocationPercent}% <span onclick="delPeriod(${idx},${pi});event.stopPropagation()" style="cursor:pointer;opacity:.6;margin-left:2px">✕</span></span>`).join('')}
+              </div>
+            </div>` : ''}
+
+            <div style="font-size:10px;font-weight:700;color:#9ca3af;text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">Add period</div>
+            <div style="display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap">
+              <div class="fg"><label class="lbl">From week</label>
+                <input class="inp narrow" type="number" min="1" max="52" id="ea-start-${idx}" value="${state.eaStart}" oninput="state.eaStart=+this.value" />
+              </div>
+              <div style="padding-bottom:8px;color:#9ca3af">→</div>
+              <div class="fg"><label class="lbl">To week</label>
+                <input class="inp narrow" type="number" min="1" max="52" id="ea-end-${idx}" value="${state.eaEnd}" oninput="state.eaEnd=+this.value" />
+              </div>
+              <div class="fg"><label class="lbl">Allocation %</label>
+                <input class="inp narrow" type="number" min="0" max="200" id="ea-pct-${idx}" value="${state.eaPct}" oninput="state.eaPct=+this.value" />
+              </div>
+              <div style="display:flex;gap:6px;padding-bottom:4px">
+                <button class="btn primary sm" onclick="addPeriodToAssignment(${idx})">＋ Add period</button>
+                <button class="btn sm" onclick="state.editingAssignmentId=null;render()">✕ Close</button>
+                ${a.committed
+                  ? `<button class="btn danger sm" onclick="uncommitA(${idx})">↩ Uncommit</button>`
+                  : `<button class="btn primary sm" onclick="commitA(${idx})">🔒 Commit</button>`}
+                <button class="btn danger sm" onclick="if(confirm('Delete this assignment?')){delAssignment(${idx})}">🗑 Delete</button>
+              </div>
             </div>
           </div>
         </td>

@@ -478,7 +478,7 @@ function calcTeamAllocForWeek(teamMemberMap, team, w){
   const members = teamMemberMap[team] || [];
   if(!members.length) return {avg:0, fullyBooked:0, free:0, over:0, total:0};
   const allocs = members.map(name =>
-    state.assignments.filter(a => a.name === name).reduce((s,a) => s + getAlloc(a,w), 0)
+    state.assignments.filter(a => a.name === name && a.committed).reduce((s,a) => s + getAlloc(a,w), 0)
   );
   return {
     avg:         Math.round(allocs.reduce((s,v) => s+v, 0) / members.length),
@@ -1051,7 +1051,7 @@ function renderDashboard(){
   const cw = CURRENT_WEEK, NEXT = 4;
   const isTM = role()==='Team Member', un = userName().trim().toLowerCase();
 
-  function ptw(name, w){ return state.assignments.filter(a=>a.name===name).reduce((s,a)=>s+getAlloc(a,w),0); }
+  function ptw(name, w){ return state.assignments.filter(a=>a.name===name && a.committed).reduce((s,a)=>s+getAlloc(a,w),0); }
 
   const allPeople = isTM
     ? [...new Set(state.assignments.filter(a=>a.committed&&a.name.trim().toLowerCase()===un).map(a=>a.name))]

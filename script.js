@@ -1674,7 +1674,7 @@ function renderTeamDetail(){
       const dot   = a.committed
         ? `<span style="background:#d1fae5;color:#065f46;padding:1px 7px;border-radius:20px;font-size:10px;font-weight:700;white-space:nowrap">✓ Committed</span>${ce?`<button class="btn danger sm" style="font-size:10px;padding:1px 6px;margin-left:4px" onclick="uncommitA(${idx})">↩</button>`:''}`
         : `<span style="background:#fef3c7;color:#92400e;padding:1px 7px;border-radius:20px;font-size:10px;font-weight:700;white-space:nowrap">⏳ Planned</span>${ce?`<button class="btn primary sm" style="font-size:10px;padding:1px 6px;margin-left:4px" onclick="commitA(${idx})">🔒 Commit</button>`:''}`;
-      const wCells = wks.map(w=>{ const al=getEffectiveAlloc(a,w); return `<td class="wk ${wCls(al)}" style="font-size:10px">${al>0?al+'%':''}</td>`; }).join('');
+      const wCells = wks.map(w=>{ const al=getEffectiveAlloc(a,w); return `<td class="wk ${a.committed ? wCls(al) : ''}" style="font-size:10px;${!a.committed?'color:#c4c9d4':''}">${al>0?al+'%':''}</td>`; }).join('');
 
       const editPanel = isEditingA ? `<tr style="background:#f0fdf8;border-bottom:2px solid #e5e7eb">
         <td colspan="${6+wks.length}" style="padding:0">
@@ -1713,8 +1713,10 @@ function renderTeamDetail(){
         </td>
       </tr>` : '';
 
-      return `<tr style="background:#fafafa;${ce?'cursor:pointer':''}" ${ce?`onclick="startEditAssignment(${idx})"`:''}>
-        <td style="padding:5px 12px 5px 28px;font-size:12px;color:#374151;white-space:nowrap">${label}${ce?` <span style="font-size:10px;color:#9ca3af">✏</span>`:''}</td>
+      const rowBg = a.committed ? '#fafafa' : '#fefefe';
+      const rowColor = a.committed ? '#374151' : '#c4c9d4';
+      return `<tr style="background:${rowBg};${ce?'cursor:pointer':''}" ${ce?`onclick="startEditAssignment(${idx})"`:''}>
+        <td style="padding:5px 12px 5px 28px;font-size:12px;color:${rowColor};white-space:nowrap;font-style:${a.committed?'normal':'italic'}">${label}${ce?` <span style="font-size:10px;color:#9ca3af">✏</span>`:''}</td>
         <td style="padding:5px 12px;font-size:11px;color:#9ca3af">${a.type}</td>
         <td colspan="3" style="padding:5px 12px;white-space:nowrap">${dot}</td>
         <td style="padding:5px 12px"></td>

@@ -24,25 +24,43 @@ const DEFAULT_SERVICES = [
   {name:'Reporting',              team:'PMO'},
 ];
 
-// ── Persistence ───────────────────────────────────────────────────────────────
-function loadSaved(){
-  try { const r=localStorage.getItem('rp_data'); if(r) return JSON.parse(r); } catch(e){}
-  return null;
+// ── Persistence — API + localStorage fallback ─────────────────────────────
+const API_URL = 'http://resource-planner-api-sgit-theresourceplanner.apps.openshift-dev.stenacloud.com';
+
+async function loadFromApi(){
+  try {
+    const res = await fetch(`${API_URL}/api/data`);
+    if(!res.ok) throw new Error('API error');
+    return await res.json();
+  } catch(e) {
+    console.warn('API unavailable, using localStorage:', e.message);
+    return null;
+  }
 }
 
-function saveData(){
+async function saveData(){
+  const data = {
+    projects:    state.projects,
+    assignments: state.assignments,
+    baseServices:state.baseServices,
+    teamMembers: state.teamMembers,
+    teamConfig:  state.teamConfig,
+    inboxItems:  state.inboxItems,
+    userName: document.getElementById('user-name')?.value || '',
+    role:     document.getElementById('role-sel')?.value  || 'Teamlead',
+  };
+  // Always save to localStorage as backup
+  try { localStorage.setItem('rp_data', JSON.stringify(data)); } catch(e){}
+  // Save to API
   try {
-    localStorage.setItem('rp_data', JSON.stringify({
-      projects:    state.projects,
-      assignments: state.assignments,
-      baseServices:state.baseServices,
-      teamMembers: state.teamMembers,
-      teamConfig:  state.teamConfig,
-      inboxItems:  state.inboxItems,
-      userName: document.getElementById('user-name')?.value || '',
-      role:     document.getElementById('role-sel')?.value  || 'Teamlead',
-    }));
-  } catch(e){}
+    await fetch(`${API_URL}/api/data`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(data),
+    });
+  } catch(e) {
+    console.warn('Could not save to API:', e.message);
+  }
 }
 
 function exportData(){
@@ -82,7 +100,11 @@ function clearData(){
 }
 
 // ── State ─────────────────────────────────────────────────────────────────────
-const saved = loadSaved();
+function loadSaved(){
+  try { const r=localStorage.getItem('rp_data'); if(r) return JSON.parse(r); } catch(e){}
+  return null;
+}
+const saved = loadSaved(); // localStorage fallback used until API loads
 
 let state = {
   // Navigation
@@ -91,7 +113,7 @@ let state = {
   selectedTeam: null,
   selectedPerson: null,
 
-  // Data
+  // Data — start from localStorage, will be overwritten by API data
   projects:     saved?.projects     || [],
   assignments:  saved?.assignments  || [],
   baseServices: saved?.baseServices || DEFAULT_SERVICES,
@@ -1818,7 +1840,30 @@ function renderAdd(){
 }
 
 // ── Startup ───────────────────────────────────────────────────────────────────
-autoRegisterTeamMembers();
-if(saved?.userName) document.getElementById('user-name').value = saved.userName;
-if(saved?.role)     document.getElementById('role-sel').value  = saved.role;
-render();
+async function init(){
+  // Show loading state
+  document.getElementById('content').innerHTML =
+    '<div style="display:flex;align-items:center;justify-content:center;height:200px;color:#9ca3af;font-size:14px">Loading data…</div>';
+
+  // Try to load from API
+  const apiData = await loadFromApi();
+  if(apiData && Object.keys(apiData).length > 0){
+    if(apiData.projects)    state.projects    = apiData.projects;
+    if(apiData.assignments) state.assignments = apiData.assignments;
+    if(apiData.baseServices)state.baseServices= apiData.baseServices;
+    if(apiData.teamMembers) state.teamMembers = apiData.teamMembers;
+    if(apiData.teamConfig)  state.teamConfig  = apiData.teamConfig;
+    if(apiData.inboxItems)  state.inboxItems  = apiData.inboxItems;
+    if(apiData.userName) document.getElementById('user-name').value = apiData.userName;
+    if(apiData.role)     document.getElementById('role-sel').value  = apiData.role;
+  } else if(saved) {
+    // Fall back to localStorage data
+    if(saved.userName) document.getElementById('user-name').value = saved.userName;
+    if(saved.role)     document.getElementById('role-sel').value  = saved.role;
+  }
+
+  autoRegisterTeamMembers();
+  render();
+}
+
+init();

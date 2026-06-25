@@ -1436,39 +1436,60 @@ function renderProjects(){
   const ce = canEdit(), r = role();
   const visible = r==='Project Manager' ? state.projects.filter(p=>isPmProject(p)) : state.projects;
 
-  const list = visible.length ? visible.map(p => {
-    const allA = state.assignments.filter(a=>a.workName===p.name);
-    const vis  = r==='Team Member' ? allA.filter(a=>a.committed&&a.name.trim().toLowerCase()===userName().trim().toLowerCase()) : allA;
-    const comm = vis.filter(a=>a.committed).length;
-    const plan = r!=='Team Member' ? vis.filter(a=>!a.committed).length : 0;
+  const list = visible.length ? (() => {
+    // Categorize projects
+    const ongoing  = [];
+    const planned  = [];
+    const noRes    = [];
 
-    // Check if ongoing: current week within start/end date, or has active assignments this week
-    const todayWeek = CURRENT_WEEK;
-    const startWeek = p.startDate ? Math.ceil((new Date(p.startDate) - new Date(new Date().getFullYear(),0,1)) / 604800000) : null;
-    const endWeek   = p.endDate   ? Math.ceil((new Date(p.endDate)   - new Date(new Date().getFullYear(),0,1)) / 604800000) : null;
-    const hasDateOngoing = startWeek !== null && endWeek !== null && todayWeek >= startWeek && todayWeek <= endWeek;
-    const hasAssignmentOngoing = allA.some(a => a.periods.some(per => todayWeek >= per.startWeek && todayWeek <= per.endWeek));
-    const isOngoing = hasDateOngoing || hasAssignmentOngoing;
+    visible.forEach(p => {
+      const allA = state.assignments.filter(a=>a.workName===p.name);
+      const hasAssignmentOngoing = allA.some(a => a.periods.some(per => CURRENT_WEEK >= per.startWeek && CURRENT_WEEK <= per.endWeek));
+      const startWeek = p.startDate ? Math.ceil((new Date(p.startDate) - new Date(new Date().getFullYear(),0,1)) / 604800000) : null;
+      const endWeek   = p.endDate   ? Math.ceil((new Date(p.endDate)   - new Date(new Date().getFullYear(),0,1)) / 604800000) : null;
+      const hasDateOngoing = startWeek !== null && endWeek !== null && CURRENT_WEEK >= startWeek && CURRENT_WEEK <= endWeek;
+      const isOngoing = hasDateOngoing || hasAssignmentOngoing;
+      const hasAny = allA.length > 0;
+      if(isOngoing) ongoing.push(p);
+      else if(hasAny) planned.push(p);
+      else noRes.push(p);
+    });
 
-    const rowBg = isOngoing ? '#f0fdf4' : '#fff';
-    const ongoingBadge = isOngoing ? `<span style="background:#d1fae5;color:#065f46;padding:2px 10px;border-radius:20px;font-size:10px;font-weight:700;letter-spacing:.05em;text-transform:uppercase">● Ongoing</span>` : '';
+    function renderProject(p){
+      const allA = state.assignments.filter(a=>a.workName===p.name);
+      const vis  = r==='Team Member' ? allA.filter(a=>a.committed&&a.name.trim().toLowerCase()===userName().trim().toLowerCase()) : allA;
+      const comm = vis.filter(a=>a.committed).length;
+      const plan = r!=='Team Member' ? vis.filter(a=>!a.committed).length : 0;
+      const hasAssignmentOngoing = allA.some(a => a.periods.some(per => CURRENT_WEEK >= per.startWeek && CURRENT_WEEK <= per.endWeek));
+      const startWeek = p.startDate ? Math.ceil((new Date(p.startDate) - new Date(new Date().getFullYear(),0,1)) / 604800000) : null;
+      const endWeek   = p.endDate   ? Math.ceil((new Date(p.endDate)   - new Date(new Date().getFullYear(),0,1)) / 604800000) : null;
+      const hasDateOngoing = startWeek !== null && endWeek !== null && CURRENT_WEEK >= startWeek && CURRENT_WEEK <= endWeek;
+      const isOngoing = hasDateOngoing || hasAssignmentOngoing;
+      const rowBg = isOngoing ? '#f0fdf4' : '#fff';
+      const ongoingBadge = isOngoing ? `<span style="background:#d1fae5;color:#065f46;padding:2px 10px;border-radius:20px;font-size:10px;font-weight:700;letter-spacing:.05em;text-transform:uppercase">● Ongoing</span>` : '';
+      return `<div class="project-row" style="cursor:pointer;transition:box-shadow .15s;background:${rowBg};border-left:${isOngoing?'3px solid #1D9E75':'3px solid transparent'}"
+        onmouseover="this.style.boxShadow='0 2px 8px rgba(0,0,0,0.08)'" onmouseout="this.style.boxShadow=''"
+        onclick="openProject(${p.id})">
+        <div style="flex:1">
+          <div style="font-size:13px;font-weight:700;color:#111827;margin-bottom:2px;display:flex;align-items:center;gap:8px">${p.name} ${ongoingBadge}<span style="font-size:11px;color:#9ca3af;font-weight:400">→ click to view</span></div>
+          <div style="font-size:11px;color:#9ca3af;margin-top:2px">📅 ${fmtDateLong(p.startDate)} → ${fmtDateLong(p.endDate)}${p.projectManager?` &nbsp;·&nbsp; PM: <strong style="color:#374151">${p.projectManager}</strong>`:''}</div>
+          ${p.description?`<div style="font-size:11px;color:#6b7280;margin-top:3px;max-width:400px;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical">${p.description}</div>`:''}
+        </div>
+        <div style="display:flex;gap:8px;align-items:center">
+          ${comm>0?`<span style="background:#d1fae5;color:#065f46;padding:2px 10px;border-radius:20px;font-size:11px;font-weight:700">✓ ${comm} committed</span>`:''}
+          ${plan>0?`<span style="background:#fef3c7;color:#92400e;padding:2px 10px;border-radius:20px;font-size:11px;font-weight:700">⏳ ${plan} planned</span>`:''}
+          ${!comm&&!plan?`<span style="color:#d1d5db;font-size:11px">No resources yet</span>`:''}
+          ${ce?`<button class="btn danger sm" style="margin-left:4px" onclick="event.stopPropagation();deleteProject(${p.id})">🗑</button>`:''}
+        </div>
+      </div>`;
+    }
 
-    return `<div class="project-row" style="cursor:pointer;transition:box-shadow .15s;background:${rowBg};border-left:${isOngoing?'3px solid #1D9E75':'3px solid transparent'}"
-      onmouseover="this.style.boxShadow='0 2px 8px rgba(0,0,0,0.08)'" onmouseout="this.style.boxShadow=''"
-      onclick="openProject(${p.id})">
-      <div style="flex:1">
-        <div style="font-size:13px;font-weight:700;color:#111827;margin-bottom:2px;display:flex;align-items:center;gap:8px">${p.name} ${ongoingBadge}<span style="font-size:11px;color:#9ca3af;font-weight:400">→ click to view</span></div>
-        <div style="font-size:11px;color:#9ca3af;margin-top:2px">📅 ${fmtDateLong(p.startDate)} → ${fmtDateLong(p.endDate)}${p.projectManager?` &nbsp;·&nbsp; PM: <strong style="color:#374151">${p.projectManager}</strong>`:''}</div>
-        ${p.description?`<div style="font-size:11px;color:#6b7280;margin-top:3px;max-width:400px;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical">${p.description}</div>`:''}
-      </div>
-      <div style="display:flex;gap:8px;align-items:center">
-        ${comm>0?`<span style="background:#d1fae5;color:#065f46;padding:2px 10px;border-radius:20px;font-size:11px;font-weight:700">✓ ${comm} committed</span>`:''}
-        ${plan>0?`<span style="background:#fef3c7;color:#92400e;padding:2px 10px;border-radius:20px;font-size:11px;font-weight:700">⏳ ${plan} planned</span>`:''}
-        ${!comm&&!plan?`<span style="color:#d1d5db;font-size:11px">No resources yet</span>`:''}
-        ${ce?`<button class="btn danger sm" style="margin-left:4px" onclick="event.stopPropagation();deleteProject(${p.id})">🗑</button>`:''}
-      </div>
-    </div>`;
-  }).join('')
+    const section = (label, items) => items.length ? `
+      <div style="font-size:10px;font-weight:700;color:#9ca3af;text-transform:uppercase;letter-spacing:.08em;padding:14px 18px 6px">${label} (${items.length})</div>
+      ${items.map(renderProject).join('')}` : '';
+
+    return section('🟢 Ongoing', ongoing) + section('⏳ Planned', planned) + section('📭 No resources', noRes);
+  })()
   : r==='Project Manager'
     ? `<div class="empty" style="padding:24px 0"><span class="empty-icon">💼</span>No projects assigned to you yet.</div>`
     : `<div class="empty" style="padding:24px 0"><span class="empty-icon">💼</span>No projects yet.</div>`;

@@ -1716,7 +1716,7 @@ function renderTeamDetail(){
       const rowBg = a.committed ? '#fafafa' : '#fefefe';
       const rowColor = a.committed ? '#374151' : '#c4c9d4';
       return `<tr style="background:${rowBg};${ce?'cursor:pointer':''}" ${ce?`onclick="startEditAssignment(${idx})"`:''}>
-        <td style="padding:5px 12px 5px 28px;font-size:12px;color:${rowColor};white-space:nowrap;font-style:${a.committed?'normal':'italic'}">${label}${ce?` <span style="font-size:10px;color:#9ca3af">✏</span>`:''}</td>
+        <td style="padding:5px 12px 5px 28px;font-size:12px;color:${rowColor};white-space:nowrap">${label}${ce?` <span style="font-size:10px;color:#9ca3af">✏</span>`:''}</td>
         <td style="padding:5px 12px;font-size:11px;color:#9ca3af">${a.type}</td>
         <td colspan="3" style="padding:5px 12px;white-space:nowrap">${dot}</td>
         <td style="padding:5px 12px"></td>

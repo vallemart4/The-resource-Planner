@@ -194,5 +194,7 @@
   .org-person { display:flex; align-items:center; gap:8px; font-size:13px; font-weight:600; color:#111827; }
   .org-role-badge { font-size:10px; font-weight:700; padding:1px 7px; border-radius:20px; }
   .week-badge { font-family:'DM Mono',monospace; font-size:11px; font-weight:700; background:var(--bg4); color:var(--text3); padding:1px 6px; border-radius:4px; }
-  ::-webkit-scrollbar { width: 5px; height: 5px; }
-  ::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 3px; }
+  ::-webkit-scrollbar { width: 8px; height: 10px; }
+  ::-webkit-scrollbar-thumb { background: #9ca3af; border-radius: 5px; }
+  ::-webkit-scrollbar-thumb:hover { background: #6b7280; }
+  ::-webkit-scrollbar-track { background: #f3f4f6; }

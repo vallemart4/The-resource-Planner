@@ -496,35 +496,47 @@ function wkCellA(a, w){
   return `<td class="wk ${wClass(eff)}" style="${isPast&&!eff?'opacity:.5;':''}${isPast&&eff?'filter:saturate(.6);':''}">${eff>0 ? eff+'%' : '–'}</td>`;
 }
 
+// ── Week navigation helpers (called from onclick — no inline math) ────────────
+function weekNav(delta){
+  const minOffset = -(CURRENT_WEEK - 1);
+  const maxOffset = 52 - CURRENT_WEEK - 11;
+  state.weekOffset = Math.max(minOffset, Math.min(maxOffset, state.weekOffset + delta));
+  render();
+}
+function weekNavReset(){
+  state.weekOffset = 0;
+  render();
+}
+function weekNavToggleAll(){
+  state.showAllWeeks = !state.showAllWeeks;
+  state.weekOffset = 0;
+  render();
+}
+
 // ── UPDATED: weekRangeToggle with prev/next navigation ────────────────────────
 function weekRangeToggle(){
-  const minOffset = -(CURRENT_WEEK - 1);          // can't go before W1
-  const maxOffset = 52 - CURRENT_WEEK - 11;        // can't go past W52
+  const minOffset = -(CURRENT_WEEK - 1);
+  const maxOffset = 52 - CURRENT_WEEK - 11;
   const atStart   = state.weekOffset <= minOffset;
   const atEnd     = state.weekOffset >= maxOffset;
 
-  const wks       = visibleWeeks();
-  const firstW    = wks[0];
-  const lastW     = wks[wks.length - 1];
+  const wks    = visibleWeeks();
+  const firstW = wks[0];
+  const lastW  = wks[wks.length - 1];
 
-  return `<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
-    <button class="btn sm" onclick="state.showAllWeeks=!state.showAllWeeks;state.weekOffset=0;render()" style="font-size:11px">
+  const disabledStyle = 'opacity:.4;cursor:not-allowed;';
+
+  return `<div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap">
+    <button class="btn sm" onclick="weekNavToggleAll()" style="font-size:11px">
       ${state.showAllWeeks ? '📅 Aktuell vecka' : '⊞ Alla veckor'}
     </button>
     ${!state.showAllWeeks ? `
-    <button class="btn sm" onclick="state.weekOffset=Math.max(${minOffset},state.weekOffset-12);render()"
-      ${atStart?'disabled':''} style="font-size:11px;padding:3px 8px" title="12 veckor bakåt">◀ Bakåt</button>
-    <button class="btn sm" onclick="state.weekOffset=Math.max(${minOffset},state.weekOffset-1);render()"
-      ${atStart?'disabled':''} style="font-size:11px;padding:3px 6px" title="1 vecka bakåt">‹</button>
-    <span style="font-size:11px;color:#6b7280;min-width:70px;text-align:center;font-family:'DM Mono',monospace">
-      W${firstW}–W${lastW}
-    </span>
-    <button class="btn sm" onclick="state.weekOffset=Math.min(${maxOffset},state.weekOffset+1);render()"
-      ${atEnd?'disabled':''} style="font-size:11px;padding:3px 6px" title="1 vecka framåt">›</button>
-    <button class="btn sm" onclick="state.weekOffset=Math.min(${maxOffset},state.weekOffset+12);render()"
-      ${atEnd?'disabled':''} style="font-size:11px;padding:3px 8px" title="12 veckor framåt">Framåt ▶</button>
-    <button class="btn sm" onclick="state.weekOffset=0;render()"
-      ${state.weekOffset===0?'disabled':''} style="font-size:11px;padding:3px 8px;color:#0f6e56" title="Gå till aktuell vecka">↩ Nu</button>
+    <button class="btn sm" onclick="if(!${atStart})weekNav(-12)" style="font-size:11px;padding:3px 8px;${atStart?disabledStyle:''}" title="12 veckor bakåt">◀ Bakåt</button>
+    <button class="btn sm" onclick="if(!${atStart})weekNav(-1)"  style="font-size:11px;padding:3px 7px;${atStart?disabledStyle:''}" title="1 vecka bakåt">‹</button>
+    <span style="font-size:11px;color:#6b7280;min-width:68px;text-align:center;font-family:'DM Mono',monospace;user-select:none">W${firstW}–W${lastW}</span>
+    <button class="btn sm" onclick="if(!${atEnd})weekNav(1)"    style="font-size:11px;padding:3px 7px;${atEnd?disabledStyle:''}" title="1 vecka framåt">›</button>
+    <button class="btn sm" onclick="if(!${atEnd})weekNav(12)"   style="font-size:11px;padding:3px 8px;${atEnd?disabledStyle:''}" title="12 veckor framåt">Framåt ▶</button>
+    <button class="btn sm" onclick="weekNavReset()" style="font-size:11px;padding:3px 8px;${state.weekOffset===0?disabledStyle:'color:#0f6e56'}" title="Gå till aktuell vecka">↩ Nu</button>
     ` : ''}
   </div>`;
 }

@@ -431,12 +431,7 @@ function startEditAssignment(idx){
   setTimeout(() => {
     const el = document.getElementById('ea-start-'+idx);
     if(el) {
-      const main = document.querySelector('.main');
-      if(main) {
-        const rect = el.getBoundingClientRect();
-        const mainRect = main.getBoundingClientRect();
-        main.scrollTo({top: main.scrollTop + rect.top - mainRect.top - (main.clientHeight * 0.3), behavior: 'smooth'});
-      }
+      el.closest('tr')?.scrollIntoView({behavior:'smooth', block:'nearest'});
     }
   }, 50);
 }
@@ -445,9 +440,33 @@ function addPeriodToAssignment(idx){
   const end=parseInt(document.getElementById('ea-end-'+idx)?.value)||state.eaEnd;
   const pct=parseInt(document.getElementById('ea-pct-'+idx)?.value)||state.eaPct;
   if(start>end){ flashMsg('Start week must be before end week.',false); return; }
-  state.assignments[idx].periods.push({id:Date.now(), startWeek:start, endWeek:end, allocationPercent:pct});
-  state.assignments[idx].committed=false; state.assignments[idx].committedBy=null;
-  state.eaStart=Math.min(end+1,52); state.eaEnd=Math.min(end+4,52); flashMsg('Period added!',true);
+
+  const a = state.assignments[idx];
+  const newPeriods = [];
+
+  // Split existing periods around the new one
+  a.periods.forEach(p => {
+    const hasOverlap = p.startWeek <= end && p.endWeek >= start;
+    if(!hasOverlap) {
+      newPeriods.push(p);
+    } else {
+      if(p.startWeek < start)
+        newPeriods.push({id:Date.now()+Math.random(), startWeek:p.startWeek, endWeek:start-1, allocationPercent:p.allocationPercent});
+      if(p.endWeek > end)
+        newPeriods.push({id:Date.now()+Math.random(), startWeek:end+1, endWeek:p.endWeek, allocationPercent:p.allocationPercent});
+    }
+  });
+
+  // Add new period and sort
+  newPeriods.push({id:Date.now(), startWeek:start, endWeek:end, allocationPercent:pct});
+  newPeriods.sort((a,b) => a.startWeek - b.startWeek);
+
+  a.periods = newPeriods;
+  a.committed = false;
+  a.committedBy = null;
+  state.eaStart = Math.min(end+1, 52);
+  state.eaEnd   = Math.min(end+4, 52);
+  flashMsg('Period added!', true);
 }
 function saveAssignmentEdit(idx){
   const start=parseInt(document.getElementById('ea-start-'+idx)?.value)||state.eaStart;

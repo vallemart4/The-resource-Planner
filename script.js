@@ -49,9 +49,7 @@ async function saveData(){
     userName: document.getElementById('user-name')?.value || '',
     role:     document.getElementById('role-sel')?.value  || 'Teamlead',
   };
-  // Always save to localStorage as backup
   try { localStorage.setItem('rp_data', JSON.stringify(data)); } catch(e){}
-  // Save to API
   try {
     await fetch(`${API_URL}/api/data`, {
       method: 'POST',
@@ -100,12 +98,6 @@ function clearData(){
 }
 
 // ── Excel import ──────────────────────────────────────────────────────────────
-// Based on actual file structure:
-// Row 2 (index 2) = header: Name, Primary Role, Area, TL/Manager, Status, Assignment, Type, Comment, ThisWeek%, W2, W22, W3...W52
-// Cols 9-60 = weeks 2,22,3,4,5...52 (note: col 9=W2, col 10=W22, then W3 onwards)
-// Data rows start at row 3 (index 3)
-// Allocation values are decimals (0.2 = 20%)
-
 function importExcel(){
   const input = document.createElement('input');
   input.type = 'file';
@@ -123,16 +115,13 @@ function importExcel(){
     reader.onload = ev => {
       try {
         const wb   = XLSX.read(ev.target.result, {type:'binary'});
-        // Use "Resource Allocation" sheet if it exists, otherwise first sheet
         const sheetName = wb.SheetNames.includes('Resource Allocation')
           ? 'Resource Allocation' : wb.SheetNames[0];
         const ws   = wb.Sheets[sheetName];
         const rows = XLSX.utils.sheet_to_json(ws, {header:1, defval:null, raw:true});
 
-        // Row index 2 = header row
         const header = rows[2] || [];
 
-        // Build week map: col index → week number (cols 9-60)
         const weekMap = {};
         for(let c = 9; c <= 60; c++){
           const v = header[c];
@@ -142,7 +131,6 @@ function importExcel(){
           }
         }
 
-        // Data rows start at index 3
         const dataRows = rows.slice(3);
 
         const newProjects    = [];
@@ -154,7 +142,7 @@ function importExcel(){
         let importedCount = 0;
 
         dataRows.forEach(row => {
-          if(!row || !row[5]) return; // skip rows without assignment
+          if(!row || !row[5]) return;
 
           const name       = ((row[0] || '').toString().trim()).replace(/^"+|"+$/g, '').trim();
           const role       = (row[1] || '').toString().trim();
@@ -166,13 +154,11 @@ function importExcel(){
 
           if(!assignment) return;
 
-          // Determine type
           let appType = 'Project';
           if(typeRaw.includes('base service')) appType = 'Base Service';
           else if(typeRaw.includes('charge on')) appType = 'Charge On';
           else if(typeRaw.includes('initiative') && !typeRaw.includes('project')) appType = 'Internal Initiative';
 
-          // Add project
           if(appType === 'Project' && !seenProjects.has(assignment.toLowerCase())){
             seenProjects.add(assignment.toLowerCase());
             newProjects.push({
@@ -183,11 +169,9 @@ function importExcel(){
             });
           }
 
-          // Add team member
           const nameKey = name.toLowerCase();
           if(name && !nameKey.startsWith('nn') && !seenMembers.has(nameKey)){
             seenMembers.add(nameKey);
-            // Map area to team
             let team = 'Development';
             const a = area.toLowerCase();
             if(a.includes('pmo') || a === 'pmo') team = 'PMO';
@@ -202,7 +186,6 @@ function importExcel(){
             });
           }
 
-          // Build week allocations
           const weekAllocs = [];
           for(const [colStr, week] of Object.entries(weekMap)){
             const col = parseInt(colStr);
@@ -221,7 +204,6 @@ function importExcel(){
 
           if(!weekAllocs.length) return;
 
-          // Sort by week and group into periods
           weekAllocs.sort((a,b) => a.week - b.week);
           const periods = [];
           let pStart = weekAllocs[0].week;
@@ -230,7 +212,6 @@ function importExcel(){
 
           for(let i = 1; i < weekAllocs.length; i++){
             const {week, pct} = weekAllocs[i];
-            // Group consecutive weeks with same %
             if(week <= pPrev + 2 && pct === pPct){
               pPrev = week;
             } else {
@@ -242,7 +223,6 @@ function importExcel(){
 
           const committed = status === 'commited' || status === 'committed';
 
-          // Map area to team
           let team = 'Development';
           const a = area.toLowerCase();
           if(a.includes('pmo')) team = 'PMO';
@@ -267,7 +247,6 @@ function importExcel(){
           importedCount++;
         });
 
-        // Merge into state
         newProjects.forEach(p => state.projects.push(p));
         newMembers.forEach(m => state.teamMembers.push(m));
         newAssignments.forEach(a => state.assignments.push(a));
@@ -291,16 +270,14 @@ function loadSaved(){
   try { const r=localStorage.getItem('rp_data'); if(r) return JSON.parse(r); } catch(e){}
   return null;
 }
-const saved = loadSaved(); // localStorage fallback used until API loads
+const saved = loadSaved();
 
 let state = {
-  // Navigation
   tab: 'dashboard',
   selectedProject: null,
   selectedTeam: null,
   selectedPerson: null,
 
-  // Data — start from localStorage, will be overwritten by API data
   projects:     saved?.projects     || [],
   assignments:  saved?.assignments  || [],
   baseServices: saved?.baseServices || DEFAULT_SERVICES,
@@ -312,48 +289,37 @@ let state = {
   },
   inboxItems: saved?.inboxItems || [],
 
-  // Add-assignment form
   addType: 'Project',
   aName:'', aTeam:'Development', aCountry:'Sweden', aSkill:'', aLevel:'Junior',
   aProjId:'', aService:'', aWork:'', aStart:1, aEnd:3, aPct:80,
 
-  // Add-project form
   pName:'', pPm:'', pStart:'', pEnd:'', pDesc:'',
 
-  // Add-service form
   sName:'', sTeam:'Development', sTargetPct:0,
 
-  // Add-resource-to-project form
   prName:'', prTeam:'Development', prCountry:'Sweden',
   prSkill:'', prLevel:'Junior', prStart:1, prEnd:4, prPct:80,
 
-  // Add-team-member form
   tmName:'', tmCountry:'Sweden', tmSkill:'', tmLevel:'Junior',
   tmTeamlead:'', tmManager:'',
 
-  // Edit-member form
   editingMemberId: null,
   emName:'', emCountry:'Sweden', emSkill:'', emLevel:'Junior',
   emTeamlead:'', emManager:'',
 
-  // Edit-assignment form (in team detail)
   editingAssignmentId: null,
   eaStart: 1, eaEnd: 52, eaPct: 50,
 
-  // Inbox form
   iTitle:'', iDesc:'', iPriority:'Medium',
 
-  // Filters (overview)
   fTeam:'', fSkill:'', fLevel:'', fName:'', fAssignment:'', fStatus:'',
 
-  // Filter (team detail) — set of selected names, empty = show all
   teamFilterNames: new Set(),
 
-  // UI toggles
   dashAllocRange: 8,
   showAllWeeks: false,
+  weekOffset: 0,       // ← NEW: negative = past, positive = future
 
-  // Flash message
   msg: null,
 };
 
@@ -391,17 +357,10 @@ function getAlloc(a, w){
     .reduce((s, p) => s + p.allocationPercent, 0);
 }
 
-// Returns the effective allocation for an assignment in a given week.
-// For Base Services: if the person has other work that week, the base service
-// is automatically reduced so total never exceeds what's planned elsewhere.
-// Example: Anna is 10% on App Support all year. In W26 she's 100% on a project.
-// getEffectiveAlloc(appSupportAssignment, W26) → 0
-// getEffectiveAlloc(appSupportAssignment, W30) → 10 (no project that week)
 function getEffectiveAlloc(a, w){
   const raw = getAlloc(a, w);
   if(!raw || a.type !== 'Base Service') return raw;
 
-  // Only reduce based on OTHER committed assignments
   const otherAlloc = visibleAssignments()
     .filter(x => x !== a && x.name.toLowerCase() === a.name.toLowerCase() && x.committed)
     .reduce((s, x) => s + getAlloc(x, w), 0);
@@ -513,22 +472,61 @@ function setFilter(key, val){ state[key] = val; debounce(render, 300); }
 function wClass(t){ return t>100?'ao': t===100?'af': t>0?'ap': ''; }
 function cBg(c)   { return c==='Sweden'?'#dbeafe':'#fef3c7'; }
 
-function visibleWeeks(){ return state.showAllWeeks ? WEEKS : WEEKS.slice(CURRENT_WEEK-1); }
-
-function wkHdr(w){ return `<th class="wk">W${w}</th>`; }
-function wkCell(w, alloc){
-  return `<td class="wk ${wClass(alloc)}">${alloc>0 ? alloc+'%' : '–'}</td>`;
+// ── UPDATED: visibleWeeks with offset support ─────────────────────────────────
+function visibleWeeks(){
+  if(state.showAllWeeks) return WEEKS;
+  const start = Math.max(0, Math.min(CURRENT_WEEK - 1 + state.weekOffset, 40));
+  return WEEKS.slice(start, start + 12);
 }
-// For per-assignment rows (not person totals) — uses effective alloc
+
+function wkHdr(w){
+  const isCurrent = w === CURRENT_WEEK;
+  const isPast    = w < CURRENT_WEEK;
+  return `<th class="wk" style="${isCurrent?'background:var(--green-bg);':''}${isPast?'color:#b0b8c8;':''}">${isCurrent?'▼':''}W${w}</th>`;
+}
+
+function wkCell(w, alloc){
+  const isPast = w < CURRENT_WEEK;
+  return `<td class="wk ${wClass(alloc)}" style="${isPast&&!alloc?'opacity:.5;':''}${isPast&&alloc?'filter:saturate(.6);':''}">${alloc>0 ? alloc+'%' : '–'}</td>`;
+}
+
 function wkCellA(a, w){
   const eff = getEffectiveAlloc(a, w);
-  return `<td class="wk ${wClass(eff)}">${eff>0 ? eff+'%' : '–'}</td>`;
+  const isPast = w < CURRENT_WEEK;
+  return `<td class="wk ${wClass(eff)}" style="${isPast&&!eff?'opacity:.5;':''}${isPast&&eff?'filter:saturate(.6);':''}">${eff>0 ? eff+'%' : '–'}</td>`;
 }
 
+// ── UPDATED: weekRangeToggle with prev/next navigation ────────────────────────
 function weekRangeToggle(){
-  return `<button class="btn sm" onclick="state.showAllWeeks=!state.showAllWeeks;render()" style="font-size:11px">
-    ${state.showAllWeeks ? '← Current week' : '⟵ All weeks'}
-  </button>`;
+  const minOffset = -(CURRENT_WEEK - 1);          // can't go before W1
+  const maxOffset = 52 - CURRENT_WEEK - 11;        // can't go past W52
+  const atStart   = state.weekOffset <= minOffset;
+  const atEnd     = state.weekOffset >= maxOffset;
+
+  const wks       = visibleWeeks();
+  const firstW    = wks[0];
+  const lastW     = wks[wks.length - 1];
+
+  return `<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+    <button class="btn sm" onclick="state.showAllWeeks=!state.showAllWeeks;state.weekOffset=0;render()" style="font-size:11px">
+      ${state.showAllWeeks ? '📅 Aktuell vecka' : '⊞ Alla veckor'}
+    </button>
+    ${!state.showAllWeeks ? `
+    <button class="btn sm" onclick="state.weekOffset=Math.max(${minOffset},state.weekOffset-12);render()"
+      ${atStart?'disabled':''} style="font-size:11px;padding:3px 8px" title="12 veckor bakåt">◀ Bakåt</button>
+    <button class="btn sm" onclick="state.weekOffset=Math.max(${minOffset},state.weekOffset-1);render()"
+      ${atStart?'disabled':''} style="font-size:11px;padding:3px 6px" title="1 vecka bakåt">‹</button>
+    <span style="font-size:11px;color:#6b7280;min-width:70px;text-align:center;font-family:'DM Mono',monospace">
+      W${firstW}–W${lastW}
+    </span>
+    <button class="btn sm" onclick="state.weekOffset=Math.min(${maxOffset},state.weekOffset+1);render()"
+      ${atEnd?'disabled':''} style="font-size:11px;padding:3px 6px" title="1 vecka framåt">›</button>
+    <button class="btn sm" onclick="state.weekOffset=Math.min(${maxOffset},state.weekOffset+12);render()"
+      ${atEnd?'disabled':''} style="font-size:11px;padding:3px 8px" title="12 veckor framåt">Framåt ▶</button>
+    <button class="btn sm" onclick="state.weekOffset=0;render()"
+      ${state.weekOffset===0?'disabled':''} style="font-size:11px;padding:3px 8px;color:#0f6e56" title="Gå till aktuell vecka">↩ Nu</button>
+    ` : ''}
+  </div>`;
 }
 
 function flashMsg(text, ok){
@@ -645,7 +643,7 @@ function openTeam(teamName){
   if(role()==='Team Member') return;
   state.selectedTeam = teamName;
   state.tab = 'team-detail';
-  state.teamFilterNames = new Set(); // reset filter on team change
+  state.teamFilterNames = new Set();
   document.getElementById('tab-title').textContent = teamName + ' Team';
   document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
   const idMap = {Development:'nav-dev', Platform:'nav-plat', PMO:'nav-pmo'};
@@ -775,13 +773,12 @@ function startEditAssignment(idx){
   const a = state.assignments[idx];
   if(!a) return;
   state.editingAssignmentId = idx;
-  // Pre-fill with first period values
   if(a.periods.length){
     state.eaStart = a.periods[0].startWeek;
     state.eaEnd   = a.periods[a.periods.length-1].endWeek;
     state.eaPct   = a.periods[0].allocationPercent;
   }
-  state.editingMemberId = null; // close any open member editor
+  state.editingMemberId = null;
   render();
 }
 
@@ -796,7 +793,6 @@ function addPeriodToAssignment(idx){
   state.assignments[idx].periods.push({id:Date.now(), startWeek:start, endWeek:end, allocationPercent:pct});
   state.assignments[idx].committed = false;
   state.assignments[idx].committedBy = null;
-  // Update state for next period — suggest starting after this one
   state.eaStart = Math.min(end + 1, 52);
   state.eaEnd   = Math.min(end + 4, 52);
   flashMsg('Period added!', true);
@@ -810,7 +806,6 @@ function saveAssignmentEdit(idx){
   const end   = parseInt(endEl?.value)   || state.eaEnd;
   const pct   = parseInt(pctEl?.value)   || state.eaPct;
   if(start > end){ flashMsg('Start week must be before end week.', false); return; }
-  // Replace all periods with one merged period
   state.assignments[idx].periods = [{id:Date.now(), startWeek:start, endWeek:end, allocationPercent:pct}];
   state.assignments[idx].committed = false;
   state.assignments[idx].committedBy = null;
@@ -1111,7 +1106,6 @@ function renderDashboard(){
 
   function pTag(label,color,bg){ return `<span class="dash-tag" style="background:${bg};color:${color}">${label}</span>`; }
 
-  // Needs-attention card
   const needsAttention = !isTM && (overbookedNow.length||inboxPending.length||uncommitted.length);
   const attentionHtml = needsAttention ? `
     <div class="card">
@@ -1124,7 +1118,6 @@ function renderDashboard(){
       }).join('')}
     </div>` : `<div class="card"><div style="padding:14px 18px;font-size:13px;color:#0f6e56;font-weight:600">✅ Everything looks good — no immediate issues.</div></div>`;
 
-  // Tech debt card
   const hasTargets = state.baseServices.some(s=>s.targetPct>0);
   const debtHtml = hasTargets ? (()=>{
     const rows = TEAMS.map(team => {
@@ -1275,7 +1268,6 @@ function renderPersonDetail(){
   const committed = personAssignments.filter(a=>a.committed);
   const planned   = personAssignments.filter(a=>!a.committed);
 
-  // Year calendar (4 rows of 13 weeks)
   const weekTotals = WEEKS.map(w => ({w, t: personAssignments.reduce((s,a)=>s+getAlloc(a,w),0)}));
   const calRows = [];
   for(let i=0; i<52; i+=13) calRows.push(weekTotals.slice(i,i+13));
@@ -1425,7 +1417,7 @@ function renderOverview(){
     <div class="card">
       <div class="card-hdr">
         <span class="card-title">📅 Total allocation per person</span>
-        <div style="display:flex;align-items:center;gap:12px">${weekRangeToggle()}<span class="card-sub">${activeFilters>0?`${people.length} of ${allPeople.length} shown`:`W${CURRENT_WEEK}–W52 · click a person for details`}</span></div>
+        <div style="display:flex;align-items:center;gap:12px">${weekRangeToggle()}<span class="card-sub">${activeFilters>0?`${people.length} of ${allPeople.length} shown`:''}</span></div>
       </div>
       ${filterBar}${rows}
     </div>`;
@@ -1437,7 +1429,6 @@ function renderProjects(){
   const visible = r==='Project Manager' ? state.projects.filter(p=>isPmProject(p)) : state.projects;
 
   const list = visible.length ? (() => {
-    // Categorize projects
     const ongoing  = [];
     const planned  = [];
     const noRes    = [];
@@ -1531,28 +1522,6 @@ function renderProjectDetail(){
   const committed = visA.filter(a=>a.committed);
 
   function dispName(a){ return r==='Project Manager' ? (a.committed?a.name:`${a.skillset} (${a.level})`) : a.name; }
-
-  function resourceCard(a){
-    const idx = state.assignments.indexOf(a);
-    const totalW = a.periods.reduce((s,p)=>s+(p.endWeek-p.startWeek+1),0);
-    const avgAlloc = a.periods.length ? Math.round(a.periods.reduce((s,p)=>s+p.allocationPercent,0)/a.periods.length) : 0;
-    return `<div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:10px;padding:14px 16px;margin-bottom:10px">
-      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px">
-        <div style="flex:1">
-          <div style="font-size:14px;font-weight:700;margin-bottom:3px">${dispName(a)}</div>
-          <div style="font-size:12px;color:#6b7280;margin-bottom:8px">${a.team} · ${a.country} · ${a.skillset} · ${a.level}</div>
-          <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px">${a.periods.map(p=>`<span class="ptag">W${p.startWeek}–${p.endWeek}: ${p.allocationPercent}%</span>`).join('')}</div>
-          <div style="font-size:11px;color:#9ca3af">${totalW} week${totalW!==1?'s':''} · avg ${avgAlloc}%</div>
-        </div>
-        <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px;flex-shrink:0">
-          ${a.committed
-            ? `<span class="badge b-committed">✓ Committed</span><div style="font-size:10px;color:#9ca3af;margin-top:2px">by ${a.committedBy}</div>${ce?`<button class="btn danger sm" style="font-size:10px;padding:2px 6px;margin-top:4px" onclick="uncommitA(${idx})">↩ Uncommit</button>`:''}`
-            : `<span class="badge b-plan">Planned</span>${ce?`<button class="btn primary sm" style="margin-top:6px" onclick="commitA(${idx})">🔒 Commit</button>`:'<div style="font-size:11px;color:#9ca3af;margin-top:4px">Awaiting commit</div>'}`}
-          ${ce?`<button class="btn danger sm" onclick="delAssignment(${idx})">🗑 Remove</button>`:''}
-        </div>
-      </div>
-    </div>`;
-  }
 
   const wks = visibleWeeks();
 
@@ -1652,7 +1621,6 @@ function renderProjectDetail(){
 function renderTeamDetail(){
   const teamName = state.selectedTeam, r = role(), ce = canEdit();
 
-  // Auto-register anyone in planning but not yet a member
   visibleAssignments().filter(a=>a.team===teamName).forEach(a => {
     const key = a.name.trim().toLowerCase();
     if(!state.teamMembers.some(m=>m.name.trim().toLowerCase()===key&&m.team===teamName))
@@ -1677,7 +1645,6 @@ function renderTeamDetail(){
   const totalCommitted = people.reduce((s,p)=>s+p.assignments.filter(a=>a.committed).length, 0);
   const totalPlanned   = people.reduce((s,p)=>s+p.assignments.filter(a=>!a.committed).length, 0);
 
-  // Person filter bar
   const filterBar = `<div style="padding:12px 18px;border-bottom:1px solid #f3f4f6;display:flex;flex-wrap:wrap;gap:8px;align-items:center">
     <span style="font-size:11px;font-weight:700;color:#9ca3af;text-transform:uppercase;letter-spacing:.05em;white-space:nowrap">Filter people:</span>
     ${people.map(p => {
@@ -1713,14 +1680,12 @@ function renderTeamDetail(){
         <td colspan="${6+wks.length}" style="padding:0">
           <div style="padding:12px 16px">
             <div style="font-size:11px;font-weight:700;color:#0f6e56;margin-bottom:10px">✏ ${a.workName}</div>
-            
             ${a.periods.length ? `<div style="margin-bottom:10px">
               <div style="font-size:10px;font-weight:700;color:#9ca3af;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Current periods</div>
               <div style="display:flex;flex-wrap:wrap;gap:6px">
                 ${a.periods.map((p,pi)=>`<span style="background:#e0f2fe;color:#075985;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600">W${p.startWeek}–${p.endWeek}: ${p.allocationPercent}% <span onclick="delPeriod(${idx},${pi});event.stopPropagation()" style="cursor:pointer;opacity:.6;margin-left:2px">✕</span></span>`).join('')}
               </div>
             </div>` : ''}
-
             <div style="font-size:10px;font-weight:700;color:#9ca3af;text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">Add period</div>
             <div style="display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap">
               <div class="fg"><label class="lbl">From week</label>
@@ -1757,7 +1722,6 @@ function renderTeamDetail(){
     }).join('');
   }
 
-  const totals = WEEKS.map(w => people.reduce((s,p)=>s+ptw(p,w),0)); // unused but kept for future
   const memberRows = filteredPeople.map(person => {
     const allT   = WEEKS.map(w=>ptw(person,w));
     const wCells = wks.map(w=>{ const t=allT[WEEKS.indexOf(w)]; return `<td class="wk ${wCls(t)}" style="font-weight:700">${t>0?t+'%':'–'}</td>`; }).join('');
@@ -1799,7 +1763,6 @@ function renderTeamDetail(){
     </tr>${editRow}${assignmentRows(person)}`;
   }).join('');
 
-  // Debt section
   const svcsWithTarget = state.baseServices.filter(s=>s.team===teamName&&s.targetPct>0);
   const debtSection = svcsWithTarget.length ? (()=>{
     const td = calcTeamDebt(teamName);
@@ -2172,7 +2135,7 @@ function renderAdd(){
           <div class="fg"><label class="lbl">To week</label><input class="inp narrow" type="number" min="1" max="52" value="${state.aEnd}" onchange="state.aEnd=+this.value;render()" /></div>
           <div class="fg"><label class="lbl">Allocation</label><div style="display:flex;align-items:center;gap:4px"><input class="inp narrow" type="number" min="0" max="200" value="${state.aPct}" oninput="state.aPct=+this.value" /><span style="font-size:13px;color:#6b7280">%</span></div></div>
         </div>
-        <div class="hint">💡 These fields are also used by "Add period" in Detailed Planning.</div>
+        <div class="hint">💡 Du kan ange vilken vecka som helst (1–52) för att lägga in uppgifter bakåt i tid.</div>
       </div>
       <div>
         <button class="btn primary block" onclick="addAssignment()">✓ Add planning entry</button>
@@ -2184,11 +2147,9 @@ function renderAdd(){
 
 // ── Startup ───────────────────────────────────────────────────────────────────
 async function init(){
-  // Show loading state
   document.getElementById('content').innerHTML =
     '<div style="display:flex;align-items:center;justify-content:center;height:200px;color:#9ca3af;font-size:14px">Loading data…</div>';
 
-  // Try to load from API
   const apiData = await loadFromApi();
   if(apiData && Object.keys(apiData).length > 0){
     if(apiData.projects)    state.projects    = apiData.projects;
@@ -2200,7 +2161,6 @@ async function init(){
     if(apiData.userName) document.getElementById('user-name').value = apiData.userName;
     if(apiData.role)     document.getElementById('role-sel').value  = apiData.role;
   } else if(saved) {
-    // Fall back to localStorage data
     if(saved.userName) document.getElementById('user-name').value = saved.userName;
     if(saved.role)     document.getElementById('role-sel').value  = saved.role;
   }

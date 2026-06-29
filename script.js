@@ -438,7 +438,8 @@ function startEditAssignment(idx){
 function addPeriodToAssignment(idx){
   const start=parseInt(document.getElementById('ea-start-'+idx)?.value)||state.eaStart;
   const end=parseInt(document.getElementById('ea-end-'+idx)?.value)||state.eaEnd;
-  const pct=parseInt(document.getElementById('ea-pct-'+idx)?.value)||state.eaPct;
+  const pctRaw=document.getElementById('ea-pct-'+idx)?.value;
+  const pct=pctRaw===''||pctRaw===null||pctRaw===undefined ? state.eaPct : parseInt(pctRaw);
   if(start>end){ flashMsg('Start week must be before end week.',false); return; }
 
   const a = state.assignments[idx];
@@ -457,11 +458,27 @@ function addPeriodToAssignment(idx){
     }
   });
 
-  // Add new period and sort
-  newPeriods.push({id:Date.now(), startWeek:start, endWeek:end, allocationPercent:pct});
+  // Add new period (only skip if pct is 0 AND user explicitly wants to remove — we keep 0% for e.g. vacation)
+  if(pct > 0) {
+    newPeriods.push({id:Date.now(), startWeek:start, endWeek:end, allocationPercent:pct});
+  }
+  // If pct === 0, the gap just means no allocation those weeks (no period needed)
+
+  // Sort by start week
   newPeriods.sort((a,b) => a.startWeek - b.startWeek);
 
-  a.periods = newPeriods;
+  // Merge adjacent periods with same allocation %
+  const merged = [];
+  newPeriods.forEach(p => {
+    const last = merged[merged.length-1];
+    if(last && last.allocationPercent === p.allocationPercent && last.endWeek + 1 === p.startWeek) {
+      last.endWeek = p.endWeek; // extend
+    } else {
+      merged.push({...p});
+    }
+  });
+
+  a.periods = merged;
   a.committed = false;
   a.committedBy = null;
   state.eaStart = Math.min(end+1, 52);

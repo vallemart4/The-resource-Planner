@@ -428,6 +428,10 @@ function startEditAssignment(idx){
   state.editingAssignmentId=idx;
   if(a.periods.length){ state.eaStart=a.periods[0].startWeek; state.eaEnd=a.periods[a.periods.length-1].endWeek; state.eaPct=a.periods[0].allocationPercent; }
   state.editingMemberId=null; render();
+  setTimeout(() => {
+    const el = document.getElementById('ea-start-'+idx);
+    if(el) el.closest('tr')?.scrollIntoView({behavior:'smooth', block:'center'});
+  }, 50);
 }
 function addPeriodToAssignment(idx){
   const start=parseInt(document.getElementById('ea-start-'+idx)?.value)||state.eaStart;

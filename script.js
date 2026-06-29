@@ -431,9 +431,12 @@ function startEditAssignment(idx){
   setTimeout(() => {
     const el = document.getElementById('ea-start-'+idx);
     if(el) {
-      const rect = el.getBoundingClientRect();
-      const scrollTop = window.pageYOffset + rect.top - (window.innerHeight * 0.3);
-      window.scrollTo({top: scrollTop, behavior: 'smooth'});
+      const main = document.querySelector('.main');
+      if(main) {
+        const rect = el.getBoundingClientRect();
+        const mainRect = main.getBoundingClientRect();
+        main.scrollTo({top: main.scrollTop + rect.top - mainRect.top - (main.clientHeight * 0.3), behavior: 'smooth'});
+      }
     }
   }, 50);
 }

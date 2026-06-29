@@ -316,6 +316,7 @@ function weekNav(delta){
   render();
 }
 function weekNavReset(){ state.weekOffset = 0; render(); }
+function toggleAddMember(){ state.addMemberOpen=!state.addMemberOpen; render(); }
 function weekNavToggleAll(){ state.showAllWeeks = !state.showAllWeeks; state.weekOffset = 0; render(); }
 
 // ── FIXED: weekRangeToggle — buttons call weekNav() directly, pointer-events:none disables ──
@@ -541,6 +542,34 @@ function convertInboxItem(id,to){
 }
 function autoRegisterTeamMembers(){ state.assignments.forEach(a => { if(!a.name||!a.team) return; const key=a.name.trim().toLowerCase(), team=a.team.trim(); if(!state.teamMembers.some(m=>m.name.trim().toLowerCase()===key&&m.team===team)) state.teamMembers.push({id:Date.now()+Math.random(), name:a.name.trim(), team, country:a.country||'Sweden', skillset:a.skillset||'', level:a.level||'Junior'}); }); }
 
+function renderAddMemberCard(teamName, cfg, state){
+  if(!canEdit()) return '';
+  const open = state.addMemberOpen;
+  const body = open ? `
+    <div class="card-body" style="display:flex;flex-direction:column;gap:14px">
+      <div style="display:grid;grid-template-columns:1.5fr 1fr 1.5fr 1fr auto;gap:12px;align-items:flex-end">
+        <div class="fg"><label class="lbl">Full name *</label><input class="inp" id="inp-tmName" list="people-list" placeholder="Type or pick a name…" autocomplete="off" oninput="onPersonInput(this.value,'tm')" /></div>
+        <div class="fg"><label class="lbl">Country</label><select class="sel" onchange="state.tmCountry=this.value"><option value="Sweden"${state.tmCountry==='Sweden'?' selected':''}>Sweden</option><option value="Poland"${state.tmCountry==='Poland'?' selected':''}>Poland</option></select></div>
+        <div class="fg"><label class="lbl">Skillset *</label><input class="inp" id="inp-tmSkill" placeholder="e.g. React, DevOps" oninput="state.tmSkill=this.value" onkeydown="if(event.key==='Enter')addTeamMember()" /></div>
+        <div class="fg"><label class="lbl">Level</label><select class="sel" onchange="state.tmLevel=this.value">${['Junior','Mid','Senior'].map(l=>`<option${state.tmLevel===l?' selected':''}>${l}</option>`).join('')}</select></div>
+        <button class="btn primary" onclick="addTeamMember()" style="white-space:nowrap">＋ Add member</button>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;padding:12px;background:#f9fafb;border-radius:8px;border:1px solid #f3f4f6">
+        <div class="fg"><label class="lbl">Teamlead override <span style="color:#9ca3af;font-weight:400">— blank = team default: <strong>${cfg.teamlead||'none set'}</strong></span></label><input class="inp" id="inp-tmTl" list="people-list-optional" placeholder="Blank = inherit from team" autocomplete="off" oninput="state.tmTeamlead=this.value" /></div>
+        <div class="fg"><label class="lbl">Manager override <span style="color:#9ca3af;font-weight:400">— blank = team default: <strong>${cfg.manager||'none set'}</strong></span></label><input class="inp" id="inp-tmMgr" list="people-list-optional" placeholder="Blank = inherit from team" autocomplete="off" oninput="state.tmManager=this.value" /></div>
+      </div>
+    </div>` : '';
+  return `<div class="card" style="margin-bottom:16px">
+    <div class="card-hdr" onclick="toggleAddMember()" style="cursor:pointer;user-select:none">
+      <div style="display:flex;align-items:center;gap:8px">
+        <span style="font-size:13px">${open?'▾':'▸'}</span>
+        <span class="card-title">＋ Add team member</span>
+      </div>
+    </div>
+    ${body}
+  </div>`;
+}
+
 function render(){
   buildDatalist(); updateSidebarForRole();
   const darkBtn=document.getElementById('dark-btn'); if(darkBtn) darkBtn.textContent=document.body.classList.contains('dark')?'☀ Light':'🌙 Dark';
@@ -739,7 +768,7 @@ function renderTeamDetail(){
   return `<div style="margin-bottom:12px"><button class="btn sm" onclick="setTab('overview')">← Back to Overview</button></div>
     <div class="card" style="margin-bottom:16px"><div class="card-hdr"><span class="card-title">👥 ${teamName} Team</span><div style="display:flex;gap:16px;font-size:12px;color:#6b7280"><span><strong style="color:#111827">${people.length}</strong> member${people.length!==1?'s':''}</span><span><strong style="color:#0f6e56">${totalCommitted}</strong> committed</span><span><strong style="color:#b45309">${totalPlanned}</strong> planned</span></div></div><div style="padding:14px 18px;border-top:1px solid #f3f4f6;display:grid;grid-template-columns:1fr 1fr;gap:12px"><div><div class="org-label">Team Lead</div>${ce?`<div style="display:flex;align-items:center;gap:8px">${peopleSelectOptional('tc-tl-'+teamName,cfg.teamlead||'','saveTeamConfig(\''+teamName+'\',\'teamlead\',this.value)','flex:1;max-width:220px')}${cfg.teamlead?`<span style="font-size:11px;color:#0f6e56;font-weight:600">✓ ${cfg.teamlead}</span>`:'<span style="font-size:11px;color:#9ca3af">Not assigned</span>'}</div>`:`<div class="org-person">${cfg.teamlead||'<span style="color:#9ca3af;font-weight:400">Not assigned</span>'}</div>`}</div><div><div class="org-label">Manager</div>${ce?`<div style="display:flex;align-items:center;gap:8px">${peopleSelectOptional('tc-mgr-'+teamName,cfg.manager||'','saveTeamConfig(\''+teamName+'\',\'manager\',this.value)','flex:1;max-width:220px')}${cfg.manager?`<span style="font-size:11px;color:#185fa5;font-weight:600">✓ ${cfg.manager}</span>`:'<span style="font-size:11px;color:#9ca3af">Not assigned</span>'}</div>`:`<div class="org-person">${cfg.manager||'<span style="color:#9ca3af;font-weight:400">Not assigned</span>'}</div>`}</div></div></div>
     ${debtSection}
-    ${ce?`<div class="card" style="margin-bottom:16px"><div class="card-hdr"><span class="card-title">＋ Add team member</span></div><div class="card-body" style="display:flex;flex-direction:column;gap:14px"><div style="display:grid;grid-template-columns:1.5fr 1fr 1.5fr 1fr auto;gap:12px;align-items:flex-end"><div class="fg"><label class="lbl">Full name *</label><input class="inp" id="inp-tmName" list="people-list" placeholder="Type or pick a name…" autocomplete="off" oninput="onPersonInput(this.value,'tm')" /></div><div class="fg"><label class="lbl">Country</label><select class="sel" onchange="state.tmCountry=this.value"><option value="Sweden"${state.tmCountry==='Sweden'?' selected':''}>Sweden</option><option value="Poland"${state.tmCountry==='Poland'?' selected':''}>Poland</option></select></div><div class="fg"><label class="lbl">Skillset *</label><input class="inp" id="inp-tmSkill" placeholder="e.g. React, DevOps" oninput="state.tmSkill=this.value" onkeydown="if(event.key==='Enter')addTeamMember()" /></div><div class="fg"><label class="lbl">Level</label><select class="sel" onchange="state.tmLevel=this.value">${['Junior','Mid','Senior'].map(l=>`<option${state.tmLevel===l?' selected':''}>${l}</option>`).join('')}</select></div><button class="btn primary" onclick="addTeamMember()" style="white-space:nowrap">＋ Add member</button></div><div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;padding:12px;background:#f9fafb;border-radius:8px;border:1px solid #f3f4f6"><div class="fg"><label class="lbl">Teamlead override <span style="color:#9ca3af;font-weight:400">— blank = team default: <strong>${cfg.teamlead||'none set'}</strong></span></label><input class="inp" id="inp-tmTl" list="people-list-optional" placeholder="Blank = inherit from team" autocomplete="off" oninput="state.tmTeamlead=this.value" /></div><div class="fg"><label class="lbl">Manager override <span style="color:#9ca3af;font-weight:400">— blank = team default: <strong>${cfg.manager||'none set'}</strong></span></label><input class="inp" id="inp-tmMgr" list="people-list-optional" placeholder="Blank = inherit from team" autocomplete="off" oninput="state.tmManager=this.value" /></div></div></div></div>`:''}
+    ${renderAddMemberCard(teamName, cfg, state)}
     <div class="card"><div class="card-hdr"><span class="card-title">📅 Weekly allocation</span><div style="display:flex;align-items:center;gap:12px">${weekRangeToggle()}<span class="card-sub">Green = person total · White = per-assignment</span></div></div>${!people.length?`<div class="empty"><span class="empty-icon">👥</span>No team members in ${teamName} yet.</div>`:`${filterBar}<div class="tbl-wrap"><table><thead><tr><th>Name</th><th>Skill</th><th>Level</th><th>Country</th><th>Reporting</th><th>Assignments</th>${wks.map(w=>wkHdr(w)).join('')}${ce?'<th></th>':''}</tr></thead><tbody>${memberRows}</tbody></table></div>`}</div>`;
 }
 

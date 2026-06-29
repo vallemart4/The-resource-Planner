@@ -692,6 +692,8 @@ function renderTeamDetail(){
   const peopleMap=new Map();
   state.teamMembers.filter(m=>m.team===teamName).forEach(m=>peopleMap.set(m.name.trim().toLowerCase(),{id:m.id,name:m.name,team:m.team,country:m.country,skillset:m.skillset,level:m.level,assignments:[],registered:true}));
   visibleAssignments().filter(a=>a.team===teamName).forEach(a=>{const key=a.name.trim().toLowerCase();if(peopleMap.has(key)&&!peopleMap.get(key).assignments.find(x=>x.id===a.id))peopleMap.get(key).assignments.push(a);});
+  // Sort: Base Services last
+  peopleMap.forEach(p => p.assignments.sort((a,b) => (a.type==='Base Service'?1:0)-(b.type==='Base Service'?1:0)));
   const people=[...peopleMap.values()];
   const filteredPeople=state.teamFilterNames.size>0?people.filter(p=>state.teamFilterNames.has(p.name)):people;
   const totalCommitted=people.reduce((s,p)=>s+p.assignments.filter(a=>a.committed).length,0);

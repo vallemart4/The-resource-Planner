@@ -430,7 +430,11 @@ function startEditAssignment(idx){
   state.editingMemberId=null; render();
   setTimeout(() => {
     const el = document.getElementById('ea-start-'+idx);
-    if(el) el.closest('tr')?.scrollIntoView({behavior:'smooth', block:'center'});
+    if(el) {
+      const rect = el.getBoundingClientRect();
+      const scrollTop = window.pageYOffset + rect.top - (window.innerHeight * 0.3);
+      window.scrollTo({top: scrollTop, behavior: 'smooth'});
+    }
   }, 50);
 }
 function addPeriodToAssignment(idx){

@@ -552,6 +552,30 @@ function reclassifyAssignment(idx, newType){
   const a = state.assignments[idx];
   if(!a) return;
   if(a.type === 'Base Service'){ flashMsg('Base Services cannot be reclassified.', false); return; }
+  const oldType = a.type;
+  const workName = a.workName;
+
+  // If moving AWAY from Project, check if any other assignment still uses this project
+  if(oldType === 'Project' && newType !== 'Project'){
+    const stillUsedAsProject = state.assignments.some(other =>
+      other !== a && other.type === 'Project' && other.workName === workName
+    );
+    if(!stillUsedAsProject){
+      // No one else uses this as a Project — remove the project record so it disappears from Projects tab
+      state.projects = state.projects.filter(p => p.name !== workName);
+    }
+  }
+
+  // If moving TO Project from something else, create a project record if one doesn't exist
+  if(oldType !== 'Project' && newType === 'Project'){
+    if(!state.projects.some(p => p.name === workName)){
+      state.projects.push({id:Date.now(), name:workName, projectManager:'', startDate:'', endDate:'', description:''});
+    }
+    a.projectId = state.projects.find(p => p.name === workName)?.id || null;
+  } else if(newType !== 'Project') {
+    a.projectId = null;
+  }
+
   a.type = newType;
   flashMsg(`Reclassified as ${newType}!`, true);
   render();

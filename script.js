@@ -341,6 +341,130 @@ function weekRangeToggle(){
 function flashMsg(text, ok){ state.msg = {text, ok}; render(); setTimeout(() => { state.msg = null; render(); }, 3000); }
 function fmtDate(d){ if(!d) return '—'; return new Date(d).toLocaleDateString('en-SE', {day:'2-digit', month:'short'}); }
 function fmtDateLong(d){ if(!d) return '—'; return new Date(d).toLocaleDateString('en-SE', {day:'2-digit', month:'short', year:'numeric'}); }
+function dateToWeek(d){
+  if(!d) return '';
+  const date = new Date(d);
+  const soy = new Date(date.getFullYear(), 0, 1);
+  const w = Math.min(Math.max(Math.ceil((((date - soy) / 86400000) + soy.getDay() + 1) / 7), 1), 52);
+  return 'W' + w;
+}
+function updateWeekHint(inputId, hintId){
+  const el = document.getElementById(inputId);
+  const hint = document.getElementById(hintId);
+  if(el && hint) hint.textContent = el.value ? dateToWeek(el.value) : '';
+}
+
+// ── Custom date picker with ISO week numbers ───────────────────────────────
+state.datePickerOpenFor = null;
+state.datePickerMonth = null; // {year, month} currently displayed
+
+function isoWeekNumber(date){
+  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+  const dayNum = (d.getUTCDay() + 6) % 7;
+  d.setUTCDate(d.getUTCDate() - dayNum + 3);
+  const firstThursday = new Date(Date.UTC(d.getUTCFullYear(), 0, 4));
+  const diff = d - firstThursday;
+  return 1 + Math.round(diff / (7 * 86400000));
+}
+
+function openDatePicker(targetField, currentValue){
+  const d = currentValue ? new Date(currentValue) : new Date();
+  state.datePickerOpenFor = targetField;
+  state.datePickerMonth = {year: d.getFullYear(), month: d.getMonth()};
+  render();
+}
+function closeDatePicker(){
+  state.datePickerOpenFor = null;
+  render();
+}
+function datePickerNavMonth(delta){
+  let {year, month} = state.datePickerMonth;
+  month += delta;
+  if(month < 0){ month = 11; year--; }
+  if(month > 11){ month = 0; year++; }
+  state.datePickerMonth = {year, month};
+  render();
+}
+function datePickerSelect(targetField, isoDate){
+  if(targetField === 'pStart') state.pStart = isoDate;
+  else if(targetField === 'pEnd') state.pEnd = isoDate;
+  else if(targetField === 'epStart'){ const h=document.getElementById('ep-start'); if(h) h.value = isoDate; }
+  else if(targetField === 'epEnd'){ const h=document.getElementById('ep-end'); if(h) h.value = isoDate; }
+  state.datePickerOpenFor = null;
+  state._epStartVal = targetField==='epStart' ? isoDate : state._epStartVal;
+  state._epEndVal = targetField==='epEnd' ? isoDate : state._epEndVal;
+  render();
+}
+
+function buildDatePickerWidget(targetField){
+  if(state.datePickerOpenFor !== targetField) return '';
+  const {year, month} = state.datePickerMonth;
+  const monthNames = ['Januari','Februari','Mars','April','Maj','Juni','Juli','Augusti','September','Oktober','November','December'];
+  const firstOfMonth = new Date(year, month, 1);
+  const startOffset = (firstOfMonth.getDay() + 6) % 7; // Monday=0
+  const daysInMonth = new Date(year, month+1, 0).getDate();
+  const todayStr = new Date().toISOString().split('T')[0];
+
+  // Build weeks (each row = 1 week, with week number in first cell)
+  const cells = [];
+  for(let i=0; i<startOffset; i++) cells.push(null);
+  for(let d=1; d<=daysInMonth; d++) cells.push(d);
+  while(cells.length % 7 !== 0) cells.push(null);
+
+  const rows = [];
+  for(let i=0; i<cells.length; i+=7){
+    const weekCells = cells.slice(i, i+7);
+    const firstRealDay = weekCells.find(d => d !== null);
+    const weekDate = firstRealDay ? new Date(year, month, firstRealDay) : null;
+    const wk = weekDate ? isoWeekNumber(weekDate) : '';
+    rows.push({wk, days: weekCells});
+  }
+
+  const dayHeaders = ['M','T','O','T','F','L','S'];
+
+  return `<div style="position:absolute;top:100%;left:0;margin-top:4px;background:#fff;border:1px solid #d1d5db;border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,0.15);padding:12px;z-index:1000;width:280px;font-family:'DM Sans',sans-serif">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+      <button type="button" onclick="event.stopPropagation();datePickerNavMonth(-1)" style="border:none;background:#f3f4f6;border-radius:6px;width:26px;height:26px;cursor:pointer;font-size:13px">‹</button>
+      <span style="font-size:13px;font-weight:700;color:#111827">${monthNames[month]} ${year}</span>
+      <button type="button" onclick="event.stopPropagation();datePickerNavMonth(1)" style="border:none;background:#f3f4f6;border-radius:6px;width:26px;height:26px;cursor:pointer;font-size:13px">›</button>
+    </div>
+    <table style="width:100%;border-collapse:collapse;font-size:11px">
+      <thead><tr>
+        <th style="width:28px;color:#9ca3af;font-weight:700;font-size:9px;text-transform:uppercase">Vk</th>
+        ${dayHeaders.map(h=>`<th style="color:#9ca3af;font-weight:600;padding:2px 0">${h}</th>`).join('')}
+      </tr></thead>
+      <tbody>
+        ${rows.map(row => `<tr>
+          <td style="text-align:center;color:#1D9E75;font-weight:700;font-family:'DM Mono',monospace;font-size:10px;background:#f0fdf8;border-radius:4px">${row.wk}</td>
+          ${row.days.map(d => {
+            if(d === null) return `<td></td>`;
+            const iso = `${year}-${String(month+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+            const isToday = iso === todayStr;
+            return `<td style="text-align:center;padding:1px">
+              <button type="button" onclick="event.stopPropagation();datePickerSelect('${targetField}','${iso}')"
+                style="width:26px;height:26px;border:${isToday?'1.5px solid #1D9E75':'none'};background:transparent;border-radius:6px;cursor:pointer;font-size:11px;color:#374151;font-family:inherit"
+                onmouseover="this.style.background='#f0fdf8'" onmouseout="this.style.background='transparent'">${d}</button>
+            </td>`;
+          }).join('')}
+        </tr>`).join('')}
+      </tbody>
+    </table>
+    <div style="display:flex;justify-content:space-between;margin-top:8px;padding-top:8px;border-top:1px solid #f3f4f6">
+      <button type="button" onclick="event.stopPropagation();datePickerSelect('${targetField}','')" style="font-size:11px;color:#9ca3af;background:none;border:none;cursor:pointer">Rensa</button>
+      <button type="button" onclick="event.stopPropagation();closeDatePicker()" style="font-size:11px;color:#6b7280;background:none;border:none;cursor:pointer">Stäng</button>
+    </div>
+  </div>`;
+}
+
+function dateInputWithPicker(targetField, value, placeholder){
+  const display = value ? new Date(value).toLocaleDateString('sv-SE', {day:'2-digit', month:'short', year:'numeric'}) : '';
+  const wk = value ? 'W'+isoWeekNumber(new Date(value)) : '';
+  return `<div style="position:relative">
+    <input class="inp" readonly placeholder="${placeholder||'Välj datum…'}" value="${display}" onclick="openDatePicker('${targetField}', '${value||''}')" style="cursor:pointer" />
+    ${wk?`<span style="position:absolute;right:10px;top:50%;transform:translateY(-50%);font-size:11px;font-weight:700;color:#1D9E75;font-family:'DM Mono',monospace;pointer-events:none">${wk}</span>`:''}
+    ${buildDatePickerWidget(targetField)}
+  </div>`;
+}
 function badge(label, bg, color){ return `<span style="background:${bg};color:${color};padding:1px 8px;border-radius:20px;font-size:11px;font-weight:700">${label}</span>`; }
 
 function peopleSelect(id, value, onchangeCode, extraStyle, placeholder){
@@ -395,9 +519,10 @@ function saveProjectEdits(id){
   const old=state.projects.find(p=>p.id===id);
   if(old && old.name!==name) state.assignments.forEach(a => { if(a.workName===old.name && a.type==='Project') a.workName=name; });
   state.projects=state.projects.map(p => p.id===id ? {...p,name,projectManager:pm,startDate:start,endDate:end,description:desc} : p);
+  state._epStartVal=undefined; state._epEndVal=undefined;
   flashMsg('Project updated!', true);
 }
-function toggleEditProject(){ const el=document.getElementById('edit-proj-panel'); if(el) el.style.display=el.style.display==='none'?'block':'none'; }
+function toggleEditProject(){ const el=document.getElementById('edit-proj-panel'); if(el) el.style.display=el.style.display==='none'?'block':'none'; state._epStartVal=undefined; state._epEndVal=undefined; }
 function addResourceToProject(){
   const proj=state.projects.find(p=>p.id===state.selectedProject); if(!proj) return;
   if(!state.prName.trim()||!state.prSkill.trim()){ flashMsg('Please fill in name and skillset.',false); return; }
@@ -700,7 +825,7 @@ function renderProjects(){
     const section=(label,items)=>items.length?`<div style="font-size:10px;font-weight:700;color:#9ca3af;text-transform:uppercase;letter-spacing:.08em;padding:14px 18px 6px">${label} (${items.length})</div>${items.map(renderProject).join('')}`:'';
     return section('🟢 Ongoing',ongoing)+section('⏳ Planned',planned)+section('📭 No resources',noRes)+section('✓ Done',done);
   })():r==='Project Manager'?`<div class="empty" style="padding:24px 0"><span class="empty-icon">💼</span>No projects assigned to you yet.</div>`:`<div class="empty" style="padding:24px 0"><span class="empty-icon">💼</span>No projects yet.</div>`;
-  return `<div class="card"><div class="card-hdr"><span class="card-title">💼 Projects</span></div><div class="card-body">${ce?`<div class="ibox"><div class="sec-title">Add project</div><div class="frow"><div class="fg"><label class="lbl">Project name</label><input class="inp" placeholder="e.g. Platform Renewal" value="${state.pName}" oninput="state.pName=this.value" onkeydown="if(event.key==='Enter')addProject()" /></div><div class="fg"><label class="lbl">Project manager</label>${peopleSelectOptional('add-pm',state.pPm,'state.pPm=this.value','')}</div><div class="fg"><label class="lbl">Start date</label><input class="inp" type="date" value="${state.pStart}" oninput="state.pStart=this.value" /></div><div class="fg"><label class="lbl">End date</label><input class="inp" type="date" value="${state.pEnd}" oninput="state.pEnd=this.value" /></div><div class="fg" style="grid-column:1/-1"><label class="lbl">Description <span style="color:#9ca3af;font-weight:400">(optional)</span></label><textarea class="inp" rows="2" style="resize:vertical" oninput="state.pDesc=this.value">${state.pDesc}</textarea></div><div style="padding-top:4px"><button class="btn primary" onclick="addProject()">＋ Add project</button></div></div></div>`:''}${list}</div></div>`;
+  return `<div class="card"><div class="card-hdr"><span class="card-title">💼 Projects</span></div><div class="card-body">${ce?`<div class="ibox"><div class="sec-title">Add project</div><div class="frow"><div class="fg"><label class="lbl">Project name</label><input class="inp" placeholder="e.g. Platform Renewal" value="${state.pName}" oninput="state.pName=this.value" onkeydown="if(event.key==='Enter')addProject()" /></div><div class="fg"><label class="lbl">Project manager</label>${peopleSelectOptional('add-pm',state.pPm,'state.pPm=this.value','')}</div><div class="fg"><label class="lbl">Start date</label>${dateInputWithPicker('pStart', state.pStart)}</div><div class="fg"><label class="lbl">End date</label>${dateInputWithPicker('pEnd', state.pEnd)}</div><div class="fg" style="grid-column:1/-1"><label class="lbl">Description <span style="color:#9ca3af;font-weight:400">(optional)</span></label><textarea class="inp" rows="2" style="resize:vertical" oninput="state.pDesc=this.value">${state.pDesc}</textarea></div><div style="padding-top:4px"><button class="btn primary" onclick="addProject()">＋ Add project</button></div></div></div>`:''}${list}</div></div>`;
 }
 
 function renderProjectDetail(){
@@ -713,7 +838,7 @@ function renderProjectDetail(){
   const planned=visA.filter(a=>!a.committed),committed=visA.filter(a=>a.committed);
   const wks=visibleWeeks();
   return `<div style="margin-bottom:12px"><button class="btn sm" onclick="setTab('projects')">← Back to Projects</button></div>
-    <div class="card" style="margin-bottom:16px"><div class="card-hdr"><span class="card-title">💼 ${proj.name}</span><div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap"><span style="font-size:12px;color:#6b7280">📅 <strong>${proj.startDate||'—'}</strong> → <strong>${proj.endDate||'—'}</strong></span>${proj.projectManager?`<span style="font-size:12px;color:#6b7280">PM: <strong>${proj.projectManager}</strong></span>`:''}<span style="color:#b45309;font-weight:600;font-size:12px">${planned.length} planned</span><span style="color:#0f6e56;font-weight:600;font-size:12px">${committed.length} committed</span>${ce?`<button class="btn sm" onclick="toggleProjectDone(${proj.id})">${proj.done?'↩ Reactivate':'✓ Mark as done'}</button>`:''}${ce?`<button class="btn sm" onclick="toggleEditProject()">✏ Edit</button>`:''}${ce?`<button class="btn danger sm" onclick="if(confirm('Delete project and all its planning?')){state.projects=state.projects.filter(p=>p.id!==${proj.id});state.assignments=state.assignments.filter(a=>a.workName!=='${proj.name.replace(/'/g,"\\'")}');setTab('projects')}">🗑 Delete</button>`:''}</div>${proj.description?`<div style="padding:10px 18px;font-size:13px;color:#374151;border-top:1px solid #f3f4f6;background:#fafafa;line-height:1.6">${proj.description}</div>`:''}</div>${ce?`<div id="edit-proj-panel" style="display:none;padding:16px;border-top:1px solid #e5e7eb;background:#f9fafb"><div class="fgrid"><div class="fg"><label class="lbl">Project name</label><input class="inp" id="ep-name" value="${proj.name}" /></div><div class="fg"><label class="lbl">Project manager</label>${peopleSelectOptional('ep-pm',proj.projectManager||'','document._epPm=this.value','')}</div><div class="fg"><label class="lbl">Start date</label><input class="inp" type="date" id="ep-start" value="${proj.startDate||''}" /></div><div class="fg"><label class="lbl">End date</label><input class="inp" type="date" id="ep-end" value="${proj.endDate||''}" /></div><div class="fg" style="grid-column:1/-1"><label class="lbl">Description</label><textarea class="inp" id="ep-desc" rows="2" style="resize:vertical">${proj.description||''}</textarea></div><div class="fg" style="justify-content:flex-end;padding-top:4px"><button class="btn primary" onclick="saveProjectEdits(${proj.id})">Save changes</button></div></div></div>`:''}</div>
+    <div class="card" style="margin-bottom:16px"><div class="card-hdr"><span class="card-title">💼 ${proj.name}</span><div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap"><span style="font-size:12px;color:#6b7280">📅 <strong>${proj.startDate||'—'}</strong> → <strong>${proj.endDate||'—'}</strong></span>${proj.projectManager?`<span style="font-size:12px;color:#6b7280">PM: <strong>${proj.projectManager}</strong></span>`:''}<span style="color:#b45309;font-weight:600;font-size:12px">${planned.length} planned</span><span style="color:#0f6e56;font-weight:600;font-size:12px">${committed.length} committed</span>${ce?`<button class="btn sm" onclick="toggleProjectDone(${proj.id})">${proj.done?'↩ Reactivate':'✓ Mark as done'}</button>`:''}${ce?`<button class="btn sm" onclick="toggleEditProject()">✏ Edit</button>`:''}${ce?`<button class="btn danger sm" onclick="if(confirm('Delete project and all its planning?')){state.projects=state.projects.filter(p=>p.id!==${proj.id});state.assignments=state.assignments.filter(a=>a.workName!=='${proj.name.replace(/'/g,"\\'")}');setTab('projects')}">🗑 Delete</button>`:''}</div>${proj.description?`<div style="padding:10px 18px;font-size:13px;color:#374151;border-top:1px solid #f3f4f6;background:#fafafa;line-height:1.6">${proj.description}</div>`:''}</div>${ce?`<div id="edit-proj-panel" style="display:none;padding:16px;border-top:1px solid #e5e7eb;background:#f9fafb"><div class="fgrid"><div class="fg"><label class="lbl">Project name</label><input class="inp" id="ep-name" value="${proj.name}" /></div><div class="fg"><label class="lbl">Project manager</label>${peopleSelectOptional('ep-pm',proj.projectManager||'','document._epPm=this.value','')}</div><div class="fg"><label class="lbl">Start date</label>${dateInputWithPicker('epStart', state._epStartVal!==undefined?state._epStartVal:proj.startDate)}<input type="hidden" id="ep-start" value="${(state._epStartVal!==undefined?state._epStartVal:proj.startDate)||''}" /></div><div class="fg"><label class="lbl">End date</label>${dateInputWithPicker('epEnd', state._epEndVal!==undefined?state._epEndVal:proj.endDate)}<input type="hidden" id="ep-end" value="${(state._epEndVal!==undefined?state._epEndVal:proj.endDate)||''}" /></div><div class="fg" style="grid-column:1/-1"><label class="lbl">Description</label><textarea class="inp" id="ep-desc" rows="2" style="resize:vertical">${proj.description||''}</textarea></div><div class="fg" style="justify-content:flex-end;padding-top:4px"><button class="btn primary" onclick="saveProjectEdits(${proj.id})">Save changes</button></div></div></div>`:''}</div>
     ${(ce||(r==='Project Manager'&&isPmProject(proj)))?`<div class="card" style="margin-bottom:16px"><div class="card-hdr"><span class="card-title">＋ Add resource to project</span></div><div class="card-body" style="display:flex;flex-direction:column;gap:16px"><div class="fgrid">${r!=='Project Manager'?`<div class="fg"><label class="lbl">Full name *</label>${peopleSelect('inp-prName',state.prName,"onPersonInput(this.value,'pr')",'')}</div>`:''}<div class="fg"><label class="lbl">Team</label><select class="sel" onchange="state.prTeam=this.value">${TEAMS.map(t=>`<option${state.prTeam===t?' selected':''}>${t}</option>`).join('')}</select></div><div class="fg"><label class="lbl">Country</label><select class="sel" onchange="state.prCountry=this.value"><option value="Sweden"${state.prCountry==='Sweden'?' selected':''}>Sweden</option><option value="Poland"${state.prCountry==='Poland'?' selected':''}>Poland</option></select></div><div class="fg"><label class="lbl">Skillset *</label><input class="inp" placeholder="e.g. React, DevOps" value="${state.prSkill}" oninput="state.prSkill=this.value" /></div><div class="fg"><label class="lbl">Level</label><select class="sel" onchange="state.prLevel=this.value">${['Junior','Mid','Senior'].map(l=>`<option${state.prLevel===l?' selected':''}>${l}</option>`).join('')}</select></div></div><div class="frow"><div class="fg"><label class="lbl">From week</label><input class="inp narrow" type="number" min="1" max="52" value="${state.prStart}" oninput="state.prStart=+this.value" /></div><div class="arrow">→</div><div class="fg"><label class="lbl">To week</label><input class="inp narrow" type="number" min="1" max="52" value="${state.prEnd}" oninput="state.prEnd=+this.value" /></div><div class="fg"><label class="lbl">Allocation</label><div style="display:flex;align-items:center;gap:4px"><input class="inp narrow" type="number" min="0" max="200" value="${state.prPct}" oninput="state.prPct=+this.value" /><span style="font-size:13px;color:#6b7280">%</span></div></div><div class="fg" style="justify-content:flex-end;padding-top:18px"><button class="btn primary" onclick="addResourceToProject()">＋ Add resource</button></div></div></div></div>`:''}
     <div class="card"><div class="card-hdr"><span class="card-title">📅 Weekly allocation</span><div style="display:flex;align-items:center;gap:12px">${weekRangeToggle()}<span class="card-sub">Green = person total · White = per-period</span></div></div>
     ${!visA.length?`<div class="empty"><span class="empty-icon">👤</span>No resources assigned yet.</div>`:`<div class="tbl-wrap"><table><thead><tr><th>Resource</th><th>Skill</th><th>Level</th><th>Country</th><th>Status</th>${wks.map(w=>wkHdr(w)).join('')}${ce?'<th></th>':''}</tr></thead><tbody>${visA.map(a=>{const idx=state.assignments.indexOf(a),rawN=a.name&&a.name.startsWith('__pm_planned__')?'No name':a.name,showN=r==='Project Manager'?(a.committed?rawN:'No name'):rawN,statusBadge=a.committed?`<span class="badge b-committed" style="white-space:nowrap">✓ Committed</span><div style="font-size:10px;color:#9ca3af;margin-bottom:4px">${a.committedBy}</div>${ce?`<button class="btn danger sm" style="font-size:10px;padding:2px 6px" onclick="uncommitA(${idx})">↩ Uncommit</button>`:''}`:`<span class="badge b-plan">Planned</span>${ce?`<div style="margin-top:4px"><button class="btn primary sm" onclick="commitA(${idx})">🔒 Commit</button></div>`:''}`,weekCells=wks.map(w=>wkCell(w,getEffectiveAlloc(a,w))).join(''),periodRows=a.periods.map((p,pi)=>{const pW=wks.map(w=>{const inR=w>=p.startWeek&&w<=p.endWeek;return `<td class="wk" style="font-size:10px;${inR?'background:rgba(29,158,117,0.08);color:#0f6e56':''}">${inR?p.allocationPercent+'%':''}</td>`;}).join('');return `<tr style="background:#fafafa"><td colspan="5" style="padding:4px 12px 4px 28px;font-size:11px;color:#6b7280">Period ${pi+1}: W${p.startWeek}–${p.endWeek} · ${p.allocationPercent}%  ${ce?`<button class="btn danger sm" style="padding:2px 6px;font-size:10px" onclick="delPeriod(${idx},${pi})">🗑</button>`:''}</td>${pW}${ce?'<td></td>':''}</tr>`;}).join('');return `<tr style="background:var(--green-bg);border-top:2px solid #e5e7eb"><td style="padding:10px 12px;font-size:13px;font-weight:700">${showN}</td><td style="padding:10px 12px;font-size:12px;color:#6b7280">${a.skillset}</td><td style="padding:10px 12px;font-size:12px;color:#6b7280">${a.level}</td><td style="padding:10px 12px;font-size:12px;color:#6b7280">${a.country}</td><td style="padding:10px 12px">${statusBadge}</td>${weekCells}${ce?`<td style="padding:10px 8px"><button class="btn danger sm" onclick="delAssignment(${idx})">🗑 Remove</button></td>`:''}</tr>${periodRows}`;}).join('')}</tbody></table></div>`}</div>`;

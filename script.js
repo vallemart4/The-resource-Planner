@@ -739,16 +739,12 @@ function addAssignment(){
 }
 function addInboxItem(){ if(!state.iTitle.trim()) return; state.inboxItems.push({id:Date.now(), title:state.iTitle.trim(), description:state.iDesc.trim(), priority:state.iPriority, status:'new', createdBy:userName(), createdAt:new Date().toLocaleDateString('en-SE'), convertedTo:null}); state.iTitle=''; state.iDesc=''; state.iPriority='Medium'; render(); }
 function movePlannedProjectsToInbox(){
-  // "Planned" = project has not started yet (start date is in the future, or no assignments have started)
+  // "Planned" = project has no start date yet, OR start date is in the future
   const candidates = state.projects.filter(p => {
     if(p.done) return false;
-    const startWeek = p.startDate ? Math.ceil((new Date(p.startDate) - new Date(new Date().getFullYear(),0,1)) / 604800000) : null;
-    const startedByDate = startWeek !== null && CURRENT_WEEK >= startWeek;
-    const allA = state.assignments.filter(a => a.workName === p.name);
-    const earliestAssignmentWeek = allA.length ? Math.min(...allA.flatMap(a => a.periods.map(per => per.startWeek))) : null;
-    const startedByAssignment = earliestAssignmentWeek !== null && CURRENT_WEEK >= earliestAssignmentWeek;
-    const hasStarted = startedByDate || startedByAssignment;
-    return !hasStarted; // not started yet = Planned
+    if(!p.startDate) return true; // no start date at all = Planned
+    const startWeek = Math.ceil((new Date(p.startDate) - new Date(new Date().getFullYear(),0,1)) / 604800000);
+    return CURRENT_WEEK < startWeek; // start date is in the future
   });
 
   if(!candidates.length){ flashMsg('No planned projects to move.', false); return; }
@@ -761,6 +757,7 @@ function movePlannedProjectsToInbox(){
         id: Date.now() + Math.random(),
         title: p.name,
         description: p.description || '',
+        projectManager: p.projectManager || '',
         priority: 'Medium',
         status: 'new',
         createdBy: userName(),
@@ -783,7 +780,7 @@ function deleteInboxItem(id){ state.inboxItems=state.inboxItems.filter(i=>i.id!=
 function convertInboxItem(id,to){
   const item=state.inboxItems.find(i=>i.id===id); if(!item) return;
   if(to==='revert'){ if(item.convertedTo==='Project'){ const proj=state.projects.find(p=>p.name===item.title); if(proj&&confirm('This will also delete the project "'+item.title+'". Continue?')) state.projects=state.projects.filter(p=>p.name!==item.title); else if(!proj){} else return; } item.status='new'; item.convertedTo=null; flashMsg('Reverted to inbox.',true); render(); return; }
-  if(to==='project'){ state.projects.push({id:Date.now(), name:item.title, projectManager:'', startDate:'', endDate:'', description:item.description}); item.status='converted'; item.convertedTo='Project'; flashMsg('Converted to project!',true); }
+  if(to==='project'){ state.projects.push({id:Date.now(), name:item.title, projectManager:item.projectManager||'', startDate:'', endDate:'', description:item.description}); item.status='converted'; item.convertedTo='Project'; flashMsg('Converted to project!',true); }
   else if(to==='initiative'){ if(item.convertedTo==='Project'){ const proj=state.projects.find(p=>p.name===item.title); if(proj) state.projects=state.projects.filter(p=>p.name!==item.title); } item.status='converted'; item.convertedTo='Initiative'; flashMsg('Changed to Initiative!',true); }
   else if(to==='chargeon'){ if(item.convertedTo==='Project'){ const proj=state.projects.find(p=>p.name===item.title); if(proj) state.projects=state.projects.filter(p=>p.name!==item.title); } item.status='converted'; item.convertedTo='Charge On'; flashMsg('Changed to Charge On!',true); }
   else if(to==='prestudy'){ if(item.convertedTo==='Project'){ const proj=state.projects.find(p=>p.name===item.title); if(proj) state.projects=state.projects.filter(p=>p.name!==item.title); } item.status='converted'; item.convertedTo='Pre-study'; flashMsg('Changed to Pre-study!',true); }

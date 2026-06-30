@@ -738,6 +738,49 @@ function addAssignment(){
   state.aName=''; state.aSkill=''; state.aProjId=''; state.aService=''; state.aWork=''; state.aStart=1; state.aEnd=3; state.aPct=80;
 }
 function addInboxItem(){ if(!state.iTitle.trim()) return; state.inboxItems.push({id:Date.now(), title:state.iTitle.trim(), description:state.iDesc.trim(), priority:state.iPriority, status:'new', createdBy:userName(), createdAt:new Date().toLocaleDateString('en-SE'), convertedTo:null}); state.iTitle=''; state.iDesc=''; state.iPriority='Medium'; render(); }
+function movePlannedProjectsToInbox(){
+  // "Planned" = has assignments but is NOT currently ongoing, not done, not expired
+  const candidates = state.projects.filter(p => {
+    if(p.done) return false;
+    const allA = state.assignments.filter(a => a.workName === p.name);
+    const hasAsgOngoing = allA.some(a => a.periods.some(per => CURRENT_WEEK >= per.startWeek && CURRENT_WEEK <= per.endWeek));
+    const startWeek = p.startDate ? Math.ceil((new Date(p.startDate) - new Date(new Date().getFullYear(),0,1)) / 604800000) : null;
+    const endWeek   = p.endDate   ? Math.ceil((new Date(p.endDate)   - new Date(new Date().getFullYear(),0,1)) / 604800000) : null;
+    const hasDateOngoing = startWeek !== null && endWeek !== null && CURRENT_WEEK >= startWeek && CURRENT_WEEK <= endWeek;
+    const isOngoing = hasDateOngoing || hasAsgOngoing;
+    const isExpired = p.endDate && endWeek !== null && CURRENT_WEEK > endWeek;
+    const hasAny = allA.length > 0;
+    return !isOngoing && !isExpired && hasAny; // this is exactly the "Planned" bucket
+  });
+
+  if(!candidates.length){ flashMsg('No planned projects to move.', false); return; }
+  if(!confirm(`Move ${candidates.length} planned project${candidates.length!==1?'s':''} to the Inbox for classification? They will disappear from the Projects list until reclassified.`)) return;
+
+  candidates.forEach(p => {
+    // Add to inbox (avoid duplicate titles in inbox)
+    if(!state.inboxItems.some(i => i.title === p.name)){
+      state.inboxItems.push({
+        id: Date.now() + Math.random(),
+        title: p.name,
+        description: p.description || '',
+        priority: 'Medium',
+        status: 'new',
+        createdBy: userName(),
+        createdAt: new Date().toLocaleDateString('en-SE'),
+        convertedTo: null,
+      });
+    }
+    // Remove the project record so it disappears from the Projects tab
+    state.projects = state.projects.filter(proj => proj.id !== p.id);
+    // The assignments for this project are kept but unlinked from the project (projectId cleared).
+    // They remain type 'Project' so their data isn't lost — once the inbox item is reclassified,
+    // reclassifyProject() will pick them up again by matching workName.
+    state.assignments.forEach(a => { if(a.workName === p.name && a.type === 'Project') a.projectId = null; });
+  });
+
+  flashMsg(`Moved ${candidates.length} planned project${candidates.length!==1?'s':''} to Inbox!`, true);
+  render();
+}
 function deleteInboxItem(id){ state.inboxItems=state.inboxItems.filter(i=>i.id!==id); render(); }
 function convertInboxItem(id,to){
   const item=state.inboxItems.find(i=>i.id===id); if(!item) return;
@@ -1021,7 +1064,7 @@ function renderProjects(){
     const section=(label,items)=>items.length?`<div style="font-size:10px;font-weight:700;color:#9ca3af;text-transform:uppercase;letter-spacing:.08em;padding:14px 18px 6px">${label} (${items.length})</div>${items.map(renderProject).join('')}`:'';
     return section('🟢 Ongoing',ongoing)+section('⏰ Expired',expired)+section('⏳ Planned',planned)+section('📭 No resources',noRes)+section('✓ Done',done);
   })():q?`<div class="empty" style="padding:24px 0"><span class="empty-icon">🔍</span>No projects match "${state.pSearch}".</div>`:r==='Project Manager'?`<div class="empty" style="padding:24px 0"><span class="empty-icon">💼</span>No projects assigned to you yet.</div>`:`<div class="empty" style="padding:24px 0"><span class="empty-icon">💼</span>No projects yet.</div>`;
-  return `<div class="card"><div class="card-hdr"><span class="card-title">💼 Projects</span><div style="position:relative;width:240px"><input class="inp" placeholder="🔍 Search projects…" value="${state.pSearch}" oninput="setFilter('pSearch',this.value)" style="padding-right:28px" />${state.pSearch?`<button onclick="state.pSearch='';render()" style="position:absolute;right:6px;top:50%;transform:translateY(-50%);border:none;background:none;color:#9ca3af;cursor:pointer;font-size:14px">✕</button>`:''}</div></div><div class="card-body">${q?`<div style="font-size:12px;color:#9ca3af;margin-bottom:10px">${visible.length} of ${baseVisible.length} project${baseVisible.length!==1?'s':''} match "${state.pSearch}"</div>`:''}${ce?`<div class="ibox"><div class="sec-title">Add project</div><div class="frow"><div class="fg"><label class="lbl">Project name</label><input class="inp" placeholder="e.g. Platform Renewal" value="${state.pName}" oninput="state.pName=this.value" onkeydown="if(event.key==='Enter')addProject()" /></div><div class="fg"><label class="lbl">Project manager</label>${peopleSelectOptional('add-pm',state.pPm,'state.pPm=this.value','')}</div><div class="fg"><label class="lbl">Start date</label>${dateInputWithPicker('pStart', state.pStart)}</div><div class="fg"><label class="lbl">End date</label>${dateInputWithPicker('pEnd', state.pEnd)}</div><div class="fg" style="grid-column:1/-1"><label class="lbl">Description <span style="color:#9ca3af;font-weight:400">(optional)</span></label><textarea class="inp" rows="2" style="resize:vertical" oninput="state.pDesc=this.value">${state.pDesc}</textarea></div><div style="padding-top:4px"><button class="btn primary" onclick="addProject()">＋ Add project</button></div></div></div>`:''}${list}</div></div>`;
+  return `<div class="card"><div class="card-hdr"><div style="display:flex;align-items:center;gap:10px"><span class="card-title">💼 Projects</span>${ce?`<button class="btn sm" style="font-size:11px;border-color:#f59e0b;color:#b45309" onclick="movePlannedProjectsToInbox()" title="Move all Planned projects to Inbox for classification">📥 Move planned → Inbox</button>`:''}</div><div style="position:relative;width:240px"><input class="inp" placeholder="🔍 Search projects…" value="${state.pSearch}" oninput="setFilter('pSearch',this.value)" style="padding-right:28px" />${state.pSearch?`<button onclick="state.pSearch='';render()" style="position:absolute;right:6px;top:50%;transform:translateY(-50%);border:none;background:none;color:#9ca3af;cursor:pointer;font-size:14px">✕</button>`:''}</div></div><div class="card-body">${q?`<div style="font-size:12px;color:#9ca3af;margin-bottom:10px">${visible.length} of ${baseVisible.length} project${baseVisible.length!==1?'s':''} match "${state.pSearch}"</div>`:''}${ce?`<div class="ibox"><div class="sec-title">Add project</div><div class="frow"><div class="fg"><label class="lbl">Project name</label><input class="inp" placeholder="e.g. Platform Renewal" value="${state.pName}" oninput="state.pName=this.value" onkeydown="if(event.key==='Enter')addProject()" /></div><div class="fg"><label class="lbl">Project manager</label>${peopleSelectOptional('add-pm',state.pPm,'state.pPm=this.value','')}</div><div class="fg"><label class="lbl">Start date</label>${dateInputWithPicker('pStart', state.pStart)}</div><div class="fg"><label class="lbl">End date</label>${dateInputWithPicker('pEnd', state.pEnd)}</div><div class="fg" style="grid-column:1/-1"><label class="lbl">Description <span style="color:#9ca3af;font-weight:400">(optional)</span></label><textarea class="inp" rows="2" style="resize:vertical" oninput="state.pDesc=this.value">${state.pDesc}</textarea></div><div style="padding-top:4px"><button class="btn primary" onclick="addProject()">＋ Add project</button></div></div></div>`:''}${list}</div></div>`;
 }
 
 function renderProjectDetail(){

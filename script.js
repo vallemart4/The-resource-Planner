@@ -717,6 +717,66 @@ function convertInboxItem(id,to){
   else if(to==='initiative'){ if(item.convertedTo==='Project'){ const proj=state.projects.find(p=>p.name===item.title); if(proj) state.projects=state.projects.filter(p=>p.name!==item.title); } item.status='converted'; item.convertedTo='Internal Initiative'; flashMsg('Changed to Internal Initiative!',true); }
   render();
 }
+function importT236xRotation(){
+  if(!confirm('Import the T236x on-call rotation for Soudabeh, Tomasz, Marek, Grzegorz and Mariusz? This will add 50% periods for each listed week (committed).')) return;
+
+  const ROTATION = {
+    'Soudabeh Ghafourian': {svc: 'T236x – Integration Maintenance L1 SE', weeks: [1,4,5,11,15,19,26,34]},
+    'Tomasz Trzciński':    {svc: 'T236x – Integration Maintenance L2 PL', weeks: [6,8,9,21,22,24,27,35]},
+    'Marek Siwek':         {svc: 'T236x – Integration Maintenance L2 PL', weeks: [3,10,16,20,25,30,33]},
+    'Grzegorz Krawczyszyn':{svc: 'T236x – Integration Maintenance L2 PL', weeks: [13,18,29,31]},
+    'Mariusz Nowak':       {svc: 'T236x – Integration Maintenance L2 PL', weeks: [2,7,12,14,17,23,28,32]},
+  };
+
+  let addedCount = 0;
+  let skippedCount = 0;
+
+  Object.entries(ROTATION).forEach(([personName, {svc, weeks}]) => {
+    // Find existing assignment for this person + service, or create new
+    let assignment = state.assignments.find(a =>
+      a.type === 'Base Service' &&
+      a.workName === svc &&
+      a.name.trim().toLowerCase() === personName.trim().toLowerCase()
+    );
+
+    if(!assignment){
+      // Try to inherit team/country/skillset/level from an existing assignment or team member
+      const existingInfo = state.assignments.find(a => a.name.trim().toLowerCase() === personName.trim().toLowerCase())
+        || state.teamMembers.find(m => m.name.trim().toLowerCase() === personName.trim().toLowerCase());
+      assignment = {
+        id: Date.now() + Math.random(),
+        name: personName,
+        team: existingInfo?.team || 'Development',
+        country: existingInfo?.country || (svc.includes('SE') ? 'Sweden' : 'Poland'),
+        skillset: existingInfo?.skillset || '',
+        level: existingInfo?.level || 'Mid',
+        type: 'Base Service',
+        workName: svc,
+        projectId: null,
+        periods: [],
+        confirmed: true,
+        confirmedBy: 'Import',
+        committed: true,
+        committedBy: 'Import',
+      };
+      state.assignments.push(assignment);
+    }
+
+    weeks.forEach(w => {
+      const alreadyExists = assignment.periods.some(p => p.startWeek === w && p.endWeek === w);
+      if(alreadyExists){ skippedCount++; return; }
+      assignment.periods.push({id: Date.now()+Math.random(), startWeek: w, endWeek: w, allocationPercent: 50});
+      addedCount++;
+    });
+
+    assignment.committed = true;
+    assignment.committedBy = assignment.committedBy || 'Import';
+  });
+
+  flashMsg(`Imported ${addedCount} on-call week${addedCount!==1?'s':''}!${skippedCount?` (${skippedCount} already existed)`:''}`, true);
+  render();
+}
+
 function autoRegisterTeamMembers(){ state.assignments.forEach(a => { if(!a.name||!a.team) return; const key=a.name.trim().toLowerCase(), team=a.team.trim(); if(!state.teamMembers.some(m=>m.name.trim().toLowerCase()===key&&m.team===team)) state.teamMembers.push({id:Date.now()+Math.random(), name:a.name.trim(), team, country:a.country||'Sweden', skillset:a.skillset||'', level:a.level||'Junior'}); }); }
 
 function renderAddMemberCard(teamName, cfg, state){

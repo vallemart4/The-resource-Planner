@@ -264,6 +264,16 @@ function getSvcAlloc(svcName, w){
 }
 function calcSvcDebt(svc){
   const target = svc.targetPct || 0; if(!target) return {debtPct:0, debtWeeks:0};
+  const isOnCall = svc.name.includes('Integration Maintenance');
+  if(isOnCall){
+    // Average-over-period: compare the average allocation across all elapsed weeks to target
+    let totalAlloc = 0;
+    const weeksElapsed = Math.max(1, CURRENT_WEEK - 1);
+    for(let w=1; w<CURRENT_WEEK; w++) totalAlloc += getSvcAlloc(svc.name, w);
+    const avgAlloc = totalAlloc / weeksElapsed;
+    const debtPct = Math.max(0, target - avgAlloc);
+    return {debtPct: Math.round(debtPct), debtWeeks: Math.round((debtPct/100)*10)/10};
+  }
   let debtPct = 0; for(let w=1; w<CURRENT_WEEK; w++) debtPct += Math.max(0, target - getSvcAlloc(svc.name, w));
   return {debtPct: Math.round(debtPct), debtWeeks: Math.round((debtPct/100)*10)/10};
 }

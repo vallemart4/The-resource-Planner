@@ -211,7 +211,7 @@ let state = {
   iTitle:'', iDesc:'', iPriority:'Medium',
   fTeam:'', fSkill:'', fLevel:'', fName:'', fAssignment:'', fStatus:'',
   teamFilterNames: new Set(),
-  dashAllocRange: 8, showAllWeeks: false, weekOffset: 0, debtSectionOpen: false,
+  dashAllocRange: 8, showAllWeeks: false, weekOffset: 0, debtSectionOpen: false, addMemberOpen: false,
   msg: null,
 };
 
@@ -705,7 +705,7 @@ function startEditMember(id){
   if(!canEdit()) return;
   if(state.editingMemberId===id){ state.editingMemberId=null; render(); return; }
   const m=state.teamMembers.find(m=>m.id===id); if(!m) return;
-  state.editingMemberId=id; state.emName=m.name; state.emCountry=m.country; state.emSkill=m.skillset; state.emLevel=m.level; state.emTeamlead=m.teamlead||''; state.emManager=m.manager||''; state.emTeam=m.team||teamName; render();
+  state.editingMemberId=id; state.emName=m.name; state.emCountry=m.country; state.emSkill=m.skillset; state.emLevel=m.level; state.emTeamlead=m.teamlead||''; state.emManager=m.manager||''; state.emTeam=m.team||state.selectedTeam; render();
 }
 function saveMemberEditFromInputs(id){
   const nv=document.getElementById('em-name-'+id)?.value.trim()||state.emName.trim();

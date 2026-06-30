@@ -67,6 +67,9 @@
   .role-pill select { background: none; border: none; font-size: 12px; font-weight: 600; color: var(--text2); cursor: pointer; outline: none; font-family: 'DM Sans', sans-serif; }
   .name-input { padding: 6px 10px; font-size: 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg3); width: 160px; font-family: 'DM Sans', sans-serif; outline: none; }
   .name-input:focus { border-color: var(--accent); background: var(--bg2); }
+  .dark-toggle { padding: 6px 12px; font-size: 12px; font-weight: 600; border: 1px solid var(--border); border-radius: 8px; background: var(--bg3); color: var(--text2); cursor: pointer; font-family: 'DM Sans', sans-serif; transition: all 0.1s; white-space: nowrap; }
+  .dark-toggle:hover { background: var(--bg4); }
+  .dark-toggle:disabled { opacity: .4; cursor: not-allowed; }
   .content { flex: 1; overflow-x: hidden; padding: 24px; display: flex; flex-direction: column; gap: 18px; background: var(--bg); }
 
   /* ── Metrics ── */

@@ -486,6 +486,24 @@ function buildDatalist(){
   });
 }
 function updateSidebarForRole(){ const el = document.getElementById('sidebar-teams-section'); if(el) el.style.display = role()==='Team Member' ? 'none' : ''; }
+function ensureUndoButton(){
+  let btn = document.getElementById('undo-btn');
+  const darkBtnEl = document.getElementById('dark-btn');
+  if(!btn && darkBtnEl){
+    btn = document.createElement('button');
+    btn.id = 'undo-btn';
+    btn.className = 'dark-toggle';
+    btn.onclick = undo;
+    darkBtnEl.parentNode.insertBefore(btn, darkBtnEl);
+  }
+  if(btn){
+    const count = _undoStack.length;
+    btn.textContent = '↩ Undo' + (count ? ' (' + count + ')' : '');
+    btn.disabled = count === 0;
+    btn.style.opacity = count === 0 ? '.4' : '1';
+    btn.style.cursor = count === 0 ? 'not-allowed' : 'pointer';
+  }
+}
 function toggleDark(){ const isDark = document.body.classList.toggle('dark'); localStorage.setItem('rp_dark', isDark ? '1' : '0'); document.getElementById('dark-btn').textContent = isDark ? '☀ Light' : '🌙 Dark'; }
 (function(){ if(localStorage.getItem('rp_dark')==='1') document.body.classList.add('dark'); })();
 
@@ -728,9 +746,55 @@ function renderAddMemberCard(teamName, cfg, state){
   </div>`;
 }
 
+// ── Undo system ───────────────────────────────────────────────────────────
+const UNDO_MAX = 30;
+let _undoStack = [];
+let _lastSnapshot = null;
+
+function snapshotData(){
+  return JSON.stringify({
+    projects: state.projects,
+    assignments: state.assignments,
+    baseServices: state.baseServices,
+    teamMembers: state.teamMembers,
+    teamConfig: state.teamConfig,
+    inboxItems: state.inboxItems,
+  });
+}
+
+function maybePushUndo(){
+  const current = snapshotData();
+  if(_lastSnapshot === null){
+    _lastSnapshot = current;
+    return;
+  }
+  if(current !== _lastSnapshot){
+    _undoStack.push(_lastSnapshot);
+    if(_undoStack.length > UNDO_MAX) _undoStack.shift();
+    _lastSnapshot = current;
+  }
+}
+
+function undo(){
+  if(!_undoStack.length){ flashMsg('Nothing to undo.', false); return; }
+  const prev = _undoStack.pop();
+  const data = JSON.parse(prev);
+  state.projects = data.projects;
+  state.assignments = data.assignments;
+  state.baseServices = data.baseServices;
+  state.teamMembers = data.teamMembers;
+  state.teamConfig = data.teamConfig;
+  state.inboxItems = data.inboxItems;
+  _lastSnapshot = prev;
+  flashMsg('Undone! (' + _undoStack.length + ' more available)', true);
+  render();
+}
+
 function render(){
+  maybePushUndo();
   buildDatalist(); updateSidebarForRole();
   const darkBtn=document.getElementById('dark-btn'); if(darkBtn) darkBtn.textContent=document.body.classList.contains('dark')?'☀ Light':'🌙 Dark';
+  ensureUndoButton();
   document.getElementById('foot').textContent=`${state.assignments.length} assignment${state.assignments.length!==1?'s':''} · ${state.projects.length} project${state.projects.length!==1?'s':''}`;
   saveData();
   const el=document.getElementById('content');
@@ -1018,4 +1082,12 @@ async function init(){
   autoRegisterTeamMembers();
   render();
 }
+document.addEventListener('keydown', e => {
+  if((e.ctrlKey || e.metaKey) && e.key === 'z'){
+    const active = document.activeElement;
+    const isTyping = active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.tagName === 'SELECT');
+    if(!isTyping){ e.preventDefault(); undo(); }
+  }
+});
+
 init();

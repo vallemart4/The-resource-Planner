@@ -739,18 +739,16 @@ function addAssignment(){
 }
 function addInboxItem(){ if(!state.iTitle.trim()) return; state.inboxItems.push({id:Date.now(), title:state.iTitle.trim(), description:state.iDesc.trim(), priority:state.iPriority, status:'new', createdBy:userName(), createdAt:new Date().toLocaleDateString('en-SE'), convertedTo:null}); state.iTitle=''; state.iDesc=''; state.iPriority='Medium'; render(); }
 function movePlannedProjectsToInbox(){
-  // "Planned" = has assignments but is NOT currently ongoing, not done, not expired
+  // "Planned" = project has not started yet (start date is in the future, or no assignments have started)
   const candidates = state.projects.filter(p => {
     if(p.done) return false;
-    const allA = state.assignments.filter(a => a.workName === p.name);
-    const hasAsgOngoing = allA.some(a => a.periods.some(per => CURRENT_WEEK >= per.startWeek && CURRENT_WEEK <= per.endWeek));
     const startWeek = p.startDate ? Math.ceil((new Date(p.startDate) - new Date(new Date().getFullYear(),0,1)) / 604800000) : null;
-    const endWeek   = p.endDate   ? Math.ceil((new Date(p.endDate)   - new Date(new Date().getFullYear(),0,1)) / 604800000) : null;
-    const hasDateOngoing = startWeek !== null && endWeek !== null && CURRENT_WEEK >= startWeek && CURRENT_WEEK <= endWeek;
-    const isOngoing = hasDateOngoing || hasAsgOngoing;
-    const isExpired = p.endDate && endWeek !== null && CURRENT_WEEK > endWeek;
-    const hasAny = allA.length > 0;
-    return !isOngoing && !isExpired && hasAny; // this is exactly the "Planned" bucket
+    const startedByDate = startWeek !== null && CURRENT_WEEK >= startWeek;
+    const allA = state.assignments.filter(a => a.workName === p.name);
+    const earliestAssignmentWeek = allA.length ? Math.min(...allA.flatMap(a => a.periods.map(per => per.startWeek))) : null;
+    const startedByAssignment = earliestAssignmentWeek !== null && CURRENT_WEEK >= earliestAssignmentWeek;
+    const hasStarted = startedByDate || startedByAssignment;
+    return !hasStarted; // not started yet = Planned
   });
 
   if(!candidates.length){ flashMsg('No planned projects to move.', false); return; }

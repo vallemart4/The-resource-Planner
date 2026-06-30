@@ -255,7 +255,13 @@ function getAllPeople(){
   state.assignments.forEach(a => { const key = a.name.trim().toLowerCase(); if(!map.has(key)) map.set(key, {name:a.name, team:a.team, country:a.country, skillset:a.skillset, level:a.level}); });
   return [...map.values()].sort((a,b) => a.name.localeCompare(b.name));
 }
-function getSvcAlloc(svcName, w){ return state.assignments.filter(a => a.type==='Base Service' && a.workName===svcName).reduce((s,a) => s+getEffectiveAlloc(a,w), 0); }
+function normalizeSvcName(name){
+  return (name||'').toLowerCase().replace(/[\s\-–—]+/g, ' ').trim();
+}
+function getSvcAlloc(svcName, w){
+  const target = normalizeSvcName(svcName);
+  return state.assignments.filter(a => a.type==='Base Service' && normalizeSvcName(a.workName)===target).reduce((s,a) => s+getEffectiveAlloc(a,w), 0);
+}
 function calcSvcDebt(svc){
   const target = svc.targetPct || 0; if(!target) return {debtPct:0, debtWeeks:0};
   let debtPct = 0; for(let w=1; w<CURRENT_WEEK; w++) debtPct += Math.max(0, target - getSvcAlloc(svc.name, w));
@@ -1070,7 +1076,7 @@ function renderTeamDetail(){
 
 // ── Detect Base Service name mismatches (e.g. missing spaces, typos) ──────
 function normalizeServiceName(name){
-  return name.trim().toLowerCase().replace(/\s+/g, '');
+  return normalizeSvcName(name).replace(/\s+/g, '');
 }
 function findServiceNameMismatches(){
   const officialNames = state.baseServices.map(s => s.name);

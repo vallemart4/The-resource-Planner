@@ -956,6 +956,8 @@ function renderTeamDetail(){
   // Sort: Base Services last
   peopleMap.forEach(p => p.assignments.sort((a,b) => (a.type==='Base Service'?1:0)-(b.type==='Base Service'?1:0)));
   const people=[...peopleMap.values()];
+  const LEVEL_RANK = {Senior:3, Mid:2, Junior:1};
+  people.sort((a,b) => (LEVEL_RANK[b.level]||0) - (LEVEL_RANK[a.level]||0));
   const filteredPeople=state.teamFilterNames.size>0?people.filter(p=>state.teamFilterNames.has(p.name)):people;
   const totalCommitted=people.reduce((s,p)=>s+p.assignments.filter(a=>a.committed).length,0);
   const totalPlanned=people.reduce((s,p)=>s+p.assignments.filter(a=>!a.committed).length,0);
@@ -1004,14 +1006,64 @@ function renderTeamDetail(){
     <div class="card"><div class="card-hdr"><span class="card-title">📅 Weekly allocation</span><div style="display:flex;align-items:center;gap:12px">${weekRangeToggle()}<span class="card-sub">Green = person total · White = per-assignment</span></div></div>${!people.length?`<div class="empty"><span class="empty-icon">👥</span>No team members in ${teamName} yet.</div>`:`${filterBar}<div class="tbl-wrap"><table><thead><tr><th>Name</th><th>Skill</th><th>Level</th><th>Country</th><th>Reporting</th><th>Assignments</th>${wks.map(w=>wkHdr(w)).join('')}${ce?'<th></th>':''}</tr></thead><tbody>${memberRows}</tbody></table></div>`}</div>`;
 }
 
+
+// ── Detect Base Service name mismatches (e.g. missing spaces, typos) ──────
+function normalizeServiceName(name){
+  return name.trim().toLowerCase().replace(/\s+/g, '');
+}
+function findServiceNameMismatches(){
+  const officialNames = state.baseServices.map(s => s.name);
+  const officialNormalized = new Map(officialNames.map(n => [normalizeServiceName(n), n]));
+  const mismatches = [];
+  const seen = new Set();
+  state.assignments.filter(a => a.type === 'Base Service').forEach(a => {
+    if(officialNames.includes(a.workName)) return; // exact match, fine
+    const norm = normalizeServiceName(a.workName);
+    const officialMatch = officialNormalized.get(norm);
+    if(officialMatch && !seen.has(a.workName)){
+      seen.add(a.workName);
+      mismatches.push({wrongName: a.workName, correctName: officialMatch});
+    }
+  });
+  return mismatches;
+}
+function fixServiceNameMismatch(wrongName, correctName){
+  state.assignments.forEach(a => {
+    if(a.type === 'Base Service' && a.workName === wrongName) a.workName = correctName;
+  });
+  flashMsg(`Fixed: "${wrongName}" → "${correctName}"`, true);
+  render();
+}
+function fixAllServiceNameMismatches(){
+  const mismatches = findServiceNameMismatches();
+  mismatches.forEach(m => {
+    state.assignments.forEach(a => {
+      if(a.type === 'Base Service' && a.workName === m.wrongName) a.workName = m.correctName;
+    });
+  });
+  flashMsg(`Fixed ${mismatches.length} mismatch${mismatches.length!==1?'es':''}!`, true);
+  render();
+}
+
 function renderServices(){
   const ce=canEdit();
+  const mismatches = findServiceNameMismatches();
+  const mismatchBanner = (ce && mismatches.length) ? `<div style="background:#fef2f2;border:1px solid #fca5a5;border-radius:10px;padding:14px 16px;margin-bottom:16px">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+      <div style="font-size:13px;font-weight:700;color:#b91c1c">⚠ ${mismatches.length} assignment${mismatches.length!==1?'s':''} not matching any Base Service name</div>
+      <button class="btn sm" style="background:#b91c1c;color:#fff;border-color:#b91c1c" onclick="fixAllServiceNameMismatches()">Fix all</button>
+    </div>
+    ${mismatches.map(m => `<div style="display:flex;align-items:center;justify-content:space-between;padding:6px 0;font-size:12px;border-top:1px solid #fecaca">
+      <span style="color:#7f1d1d"><s>${m.wrongName}</s> → <strong>${m.correctName}</strong></span>
+      <button class="btn sm" onclick="fixServiceNameMismatch('${m.wrongName.replace(/'/g,"\\\\'")}','${m.correctName.replace(/'/g,"\\\\'")}')">Fix this</button>
+    </div>`).join('')}
+  </div>` : '';
   const groups=TEAMS.map(t=>{const svcs=state.baseServices.filter(s=>s.team===t),teamDebt=calcTeamDebt(t),hasTargets=svcs.some(s=>s.targetPct>0);
     const svcRows=svcs.length?svcs.map(s=>{const debt=calcSvcDebt(s),target=s.targetPct||0,curAlloc=getSvcAlloc(s.name,CURRENT_WEEK),onTrack=!target||curAlloc>=target,dc=debt.debtPct===0?'#0f6e56':debt.debtPct<target*4?'#b45309':'#b91c1c',db=debt.debtPct===0?'#d1fae5':debt.debtPct<target*4?'#fef3c7':'#fef2f2';return `<div style="background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:12px 14px;margin-bottom:8px"><div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap"><div style="flex:1;min-width:140px"><div style="font-size:13px;font-weight:600;color:#111827">${s.name}</div>${target?`<div style="font-size:11px;color:#6b7280;margin-top:2px">Target: <strong>${target}%</strong> · Now: <strong style="color:${onTrack?'#0f6e56':'#b91c1c'}">${curAlloc}%</strong></div>`:`<div style="font-size:11px;color:#9ca3af;margin-top:2px">No target set</div>`}</div>${target?`<div style="text-align:right;flex-shrink:0"><span style="background:${db};color:${dc};padding:2px 10px;border-radius:20px;font-size:11px;font-weight:700">${debt.debtPct===0?'✓ No debt':'⚠ '+debt.debtPct+'% debt'}</span>${debt.debtPct>0?`<div style="font-size:10px;color:#9ca3af;margin-top:3px">= ${debt.debtWeeks} weeks fulltime</div>`:''}</div>`:''} ${ce?`<div style="display:flex;align-items:center;gap:6px;flex-shrink:0"><label style="font-size:10px;font-weight:700;color:#9ca3af;text-transform:uppercase;letter-spacing:.05em">Target %</label><input type="number" min="0" max="200" value="${target||''}" placeholder="0" style="width:60px;padding:4px 6px;font-size:12px;border:1px solid #d1d5db;border-radius:6px;font-family:DM Mono,monospace;text-align:center" oninput="setSvcTarget('${s.name.replace(/'/g,"\\'")}',this.value)" /><button class="btn sm" onclick="editSvc('${s.name.replace(/'/g,"\\'")}')">✏</button><button class="btn danger sm" onclick="delSvc('${s.name.replace(/'/g,"\\'")}')">🗑</button></div>`:''}</div>${target&&debt.debtPct>0?`<div style="margin-top:10px"><div style="display:flex;justify-content:space-between;font-size:10px;color:#9ca3af;margin-bottom:3px"><span>Accumulated debt W1–W${CURRENT_WEEK-1}</span><span>${debt.debtPct}% of one FTE</span></div><div style="height:6px;background:#f3f4f6;border-radius:3px;overflow:hidden"><div style="height:100%;width:${Math.min(100,Math.round((debt.debtPct/(target*CURRENT_WEEK))*100))}%;background:${dc};border-radius:3px;transition:width .3s"></div></div></div>`:''}</div>`;}).join(''):`<div style="font-size:12px;color:#9ca3af;padding-bottom:6px">No services</div>`;
     const teamBadge=hasTargets?(teamDebt.debtPct===0?`<span style="background:#d1fae5;color:#065f46;font-size:11px;font-weight:700;padding:1px 8px;border-radius:20px">✓ No debt</span>`:`<span style="background:#fef3c7;color:#92400e;font-size:11px;font-weight:700;padding:1px 8px;border-radius:20px">⚠ ${teamDebt.debtPct}% · ${teamDebt.debtWeeks}w</span>`):'';
     return `<div style="margin-bottom:20px"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px"><div class="svc-grp-lbl" style="margin:0">${t}</div>${teamBadge}</div>${svcRows}</div>`;
   }).join('');
-  return `<div class="card"><div class="card-hdr"><span class="card-title">🔧 Base Services</span><span class="card-sub">Set a target % to track technical debt</span></div><div class="card-body">${ce?`<div class="ibox"><div class="sec-title">Add base service</div><div class="frow"><div class="fg"><label class="lbl">Team</label><select class="sel" style="width:140px" onchange="state.sTeam=this.value">${TEAMS.map(t=>`<option${state.sTeam===t?' selected':''}>${t}</option>`).join('')}</select></div><div class="fg" style="flex:1"><label class="lbl">Service name</label><input class="inp" placeholder="e.g. API Support" value="${state.sName}" oninput="state.sName=this.value" onkeydown="if(event.key==='Enter')addSvc()" /></div><div class="fg"><label class="lbl">Target %</label><input class="inp" type="number" min="0" max="200" placeholder="e.g. 10" value="${state.sTargetPct||''}" style="width:80px" oninput="state.sTargetPct=+this.value" /></div><button class="btn primary" onclick="addSvc()">＋ Add</button></div></div>`:''}${groups}</div></div>`;
+  return `<div class="card"><div class="card-hdr"><span class="card-title">🔧 Base Services</span><span class="card-sub">Set a target % to track technical debt</span></div><div class="card-body">${mismatchBanner}${ce?`<div class="ibox"><div class="sec-title">Add base service</div><div class="frow"><div class="fg"><label class="lbl">Team</label><select class="sel" style="width:140px" onchange="state.sTeam=this.value">${TEAMS.map(t=>`<option${state.sTeam===t?' selected':''}>${t}</option>`).join('')}</select></div><div class="fg" style="flex:1"><label class="lbl">Service name</label><input class="inp" placeholder="e.g. API Support" value="${state.sName}" oninput="state.sName=this.value" onkeydown="if(event.key==='Enter')addSvc()" /></div><div class="fg"><label class="lbl">Target %</label><input class="inp" type="number" min="0" max="200" placeholder="e.g. 10" value="${state.sTargetPct||''}" style="width:80px" oninput="state.sTargetPct=+this.value" /></div><button class="btn primary" onclick="addSvc()">＋ Add</button></div></div>`:''}${groups}</div></div>`;
 }
 
 function renderInbox(){

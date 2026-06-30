@@ -739,11 +739,23 @@ function addAssignment(){
 }
 function addInboxItem(){ if(!state.iTitle.trim()) return; state.inboxItems.push({id:Date.now(), title:state.iTitle.trim(), description:state.iDesc.trim(), priority:state.iPriority, status:'new', createdBy:userName(), createdAt:new Date().toLocaleDateString('en-SE'), convertedTo:null}); state.iTitle=''; state.iDesc=''; state.iPriority='Medium'; render(); }
 function movePlannedProjectsToInbox(){
-  // "Planned" = project has no start date yet, OR start date is in the future
+  // "Planned" = project has no start date yet (or start date in future) AND is not already ongoing via assignments
   const candidates = state.projects.filter(p => {
     if(p.done) return false;
+
+    // Exclude anything currently ongoing based on committed assignments active this week
+    const allA = state.assignments.filter(a => a.workName === p.name);
+    const isOngoingByAssignment = allA.some(a =>
+      a.committed && a.periods.some(per => CURRENT_WEEK >= per.startWeek && CURRENT_WEEK <= per.endWeek)
+    );
+    if(isOngoingByAssignment) return false;
+
     if(!p.startDate) return true; // no start date at all = Planned
     const startWeek = Math.ceil((new Date(p.startDate) - new Date(new Date().getFullYear(),0,1)) / 604800000);
+    const endWeek = p.endDate ? Math.ceil((new Date(p.endDate) - new Date(new Date().getFullYear(),0,1)) / 604800000) : null;
+    const isOngoingByDate = CURRENT_WEEK >= startWeek && (endWeek === null || CURRENT_WEEK <= endWeek);
+    if(isOngoingByDate) return false;
+
     return CURRENT_WEEK < startWeek; // start date is in the future
   });
 

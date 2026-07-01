@@ -489,11 +489,11 @@ function badge(label, bg, color){ return `<span style="background:${bg};color:${
 function peopleSelect(id, value, onchangeCode, extraStyle, placeholder){
   const ph = placeholder || 'Type or select person…';
   setTimeout(() => { const el=document.getElementById(id); if(el && document.activeElement!==el) el.value=value||''; }, 0);
-  return `<input class="sel" id="${id}" list="people-list" placeholder="${ph}" style="${extraStyle||''}" autocomplete="off" oninput="${onchangeCode}" onblur="render()" />`;
+  return `<input class="sel" id="${id}" list="people-list" placeholder="${ph}" style="${extraStyle||''}" autocomplete="off" oninput="${onchangeCode}" onblur="if(!state.datePickerOpenFor)render()" />`;
 }
 function peopleSelectOptional(id, value, onchangeCode, extraStyle){
   setTimeout(() => { const el=document.getElementById(id); if(el && document.activeElement!==el) el.value=value||''; }, 0);
-  return `<input class="sel" id="${id}" list="people-list-optional" placeholder="Type name or leave blank…" style="${extraStyle||''}" autocomplete="off" oninput="${onchangeCode}" onblur="debounce(render,200)" />`;
+  return `<input class="sel" id="${id}" list="people-list-optional" placeholder="Type name or leave blank…" style="${extraStyle||''}" autocomplete="off" oninput="${onchangeCode}" onblur="if(!state.datePickerOpenFor)debounce(render,200)" />`;
 }
 function buildDatalist(){
   const people = getAllPeople();

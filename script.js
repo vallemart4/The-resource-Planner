@@ -495,7 +495,7 @@ function peopleSelect(id, value, onchangeCode, extraStyle, placeholder){
 }
 function peopleSelectOptional(id, value, onchangeCode, extraStyle){
   setTimeout(() => { const el=document.getElementById(id); if(el && document.activeElement!==el) el.value=value||''; }, 0);
-  return `<input class="sel" id="${id}" list="people-list-optional" placeholder="Type name or leave blank…" style="${extraStyle||''}" autocomplete="off" oninput="${onchangeCode}" onblur="setTimeout(()=>{if(!state.datePickerOpenFor)render()},300)" />`;
+  return `<input class="sel" id="${id}" list="people-list-optional" placeholder="Type name or leave blank…" style="${extraStyle||''}" autocomplete="off" oninput="${onchangeCode}"  />`;
 }
 function buildDatalist(){
   const people = getAllPeople();

@@ -306,7 +306,6 @@ function buildTeamMemberMap(){
 let _debounceTimer = null;
 function debounce(fn, ms){ clearTimeout(_debounceTimer); _debounceTimer = setTimeout(() => { if(!state.datePickerOpenFor) fn(); }, ms); }
 function setFilter(key, val){ state[key] = val; if(!state.datePickerOpenFor) debounce(render, 300); }
-function setFilter(key, val){ state[key] = val; debounce(render, 300); }
 function wClass(t){ return t>100?'ao': t===100?'af': t>0?'ap': ''; }
 function cBg(c)   { return c==='Sweden'?'#dbeafe':'#fef3c7'; }
 
@@ -388,15 +387,29 @@ function isoWeekNumber(date){
 }
 
 function openDatePicker(targetField, currentValue){
-  clearTimeout(_debounceTimer); // cancel any pending render() from blur events
+  clearTimeout(_debounceTimer);
   const d = currentValue ? new Date(currentValue) : new Date();
   state.datePickerOpenFor = targetField;
   state.datePickerMonth = {year: d.getFullYear(), month: d.getMonth()};
-  render();
+  // Inject the picker directly into the DOM without a full render()
+  const pickerId = 'datepicker-' + targetField;
+  let existing = document.getElementById(pickerId);
+  if(existing) existing.remove();
+  const wrapper = document.createElement('div');
+  wrapper.id = pickerId;
+  wrapper.innerHTML = buildDatePickerWidget(targetField);
+  const inputEl = document.querySelector('[onclick*="' + targetField + '"]');
+  if(inputEl && inputEl.parentNode) {
+    inputEl.parentNode.style.position = 'relative';
+    inputEl.parentNode.appendChild(wrapper.firstChild || wrapper);
+  }
 }
 function closeDatePicker(){
+  ['datepicker-pStart','datepicker-pEnd','datepicker-epStart','datepicker-epEnd'].forEach(id => {
+    const el = document.getElementById(id);
+    if(el) el.remove();
+  });
   state.datePickerOpenFor = null;
-  render();
 }
 function datePickerNavMonth(delta){
   let {year, month} = state.datePickerMonth;
@@ -409,12 +422,23 @@ function datePickerNavMonth(delta){
 function datePickerSelect(targetField, isoDate){
   if(targetField === 'pStart') state.pStart = isoDate;
   else if(targetField === 'pEnd') state.pEnd = isoDate;
-  else if(targetField === 'epStart'){ const h=document.getElementById('ep-start'); if(h) h.value = isoDate; }
-  else if(targetField === 'epEnd'){ const h=document.getElementById('ep-end'); if(h) h.value = isoDate; }
-  state.datePickerOpenFor = null;
-  state._epStartVal = targetField==='epStart' ? isoDate : state._epStartVal;
-  state._epEndVal = targetField==='epEnd' ? isoDate : state._epEndVal;
-  render();
+  else if(targetField === 'epStart'){
+    const h=document.getElementById('ep-start'); if(h) h.value = isoDate;
+    state._epStartVal = isoDate;
+  }
+  else if(targetField === 'epEnd'){
+    const h=document.getElementById('ep-end'); if(h) h.value = isoDate;
+    state._epEndVal = isoDate;
+  }
+  // Update the display input to show selected date
+  const display = isoDate ? new Date(isoDate).toLocaleDateString('sv-SE', {day:'2-digit', month:'short', year:'numeric'}) : '';
+  const wk = isoDate ? 'W'+isoWeekNumber(new Date(isoDate)) : '';
+  const inputEl = document.querySelector('[onclick*="' + targetField + '"]');
+  if(inputEl) inputEl.value = display;
+  // Update week badge if present
+  const wkEl = inputEl ? inputEl.parentNode.querySelector('span') : null;
+  if(wkEl) wkEl.textContent = wk;
+  closeDatePicker();
 }
 
 function buildDatePickerWidget(targetField){
@@ -478,12 +502,16 @@ function buildDatePickerWidget(targetField){
 }
 
 function dateInputWithPicker(targetField, value, placeholder){
-  const display = value ? new Date(value).toLocaleDateString('sv-SE', {day:'2-digit', month:'short', year:'numeric'}) : '';
   const wk = value ? 'W'+isoWeekNumber(new Date(value)) : '';
-  return `<div style="position:relative">
-    <input class="inp" readonly placeholder="${placeholder||'Välj datum…'}" value="${display}" onclick="openDatePicker('${targetField}', '${value||''}')" style="cursor:pointer" />
-    ${wk?`<span style="position:absolute;right:10px;top:50%;transform:translateY(-50%);font-size:11px;font-weight:700;color:#1D9E75;font-family:'DM Mono',monospace;pointer-events:none">${wk}</span>`:''}
-    ${buildDatePickerWidget(targetField)}
+  const hintId = 'wkhint-' + targetField;
+  // Map targetField to state updates
+  const onchange = targetField === 'pStart' ? "state.pStart=this.value;document.getElementById('wkhint-pStart').textContent=this.value?'W'+isoWeekNumber(new Date(this.value)):'';"
+    : targetField === 'pEnd' ? "state.pEnd=this.value;document.getElementById('wkhint-pEnd').textContent=this.value?'W'+isoWeekNumber(new Date(this.value)):'';"
+    : targetField === 'epStart' ? "state._epStartVal=this.value;document.getElementById('ep-start').value=this.value;document.getElementById('wkhint-epStart').textContent=this.value?'W'+isoWeekNumber(new Date(this.value)):'';"
+    : "state._epEndVal=this.value;document.getElementById('ep-end').value=this.value;document.getElementById('wkhint-epEnd').textContent=this.value?'W'+isoWeekNumber(new Date(this.value)):'';";
+  return `<div style="display:flex;align-items:center;gap:8px">
+    <input class="inp" type="date" value="${value||''}" onchange="${onchange}" style="flex:1" />
+    <span id="${hintId}" style="font-size:12px;font-weight:700;color:#1D9E75;font-family:'DM Mono',monospace;min-width:32px">${wk}</span>
   </div>`;
 }
 function badge(label, bg, color){ return `<span style="background:${bg};color:${color};padding:1px 8px;border-radius:20px;font-size:11px;font-weight:700">${label}</span>`; }
@@ -1332,6 +1360,14 @@ async function init(){
   autoRegisterTeamMembers();
   render();
 }
+document.addEventListener('click', e => {
+  if(!state.datePickerOpenFor) return;
+  const picker = document.querySelector('[id^="datepicker-"]');
+  if(picker && !picker.contains(e.target) && !e.target.closest('[onclick*="openDatePicker"]')) {
+    closeDatePicker();
+  }
+});
+
 document.addEventListener('keydown', e => {
   if((e.ctrlKey || e.metaKey) && e.key === 'z'){
     const active = document.activeElement;

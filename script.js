@@ -304,7 +304,8 @@ function buildTeamMemberMap(){
 }
 
 let _debounceTimer = null;
-function debounce(fn, ms){ clearTimeout(_debounceTimer); _debounceTimer = setTimeout(fn, ms); }
+function debounce(fn, ms){ clearTimeout(_debounceTimer); _debounceTimer = setTimeout(() => { if(!state.datePickerOpenFor) fn(); }, ms); }
+function setFilter(key, val){ state[key] = val; if(!state.datePickerOpenFor) debounce(render, 300); }
 function setFilter(key, val){ state[key] = val; debounce(render, 300); }
 function wClass(t){ return t>100?'ao': t===100?'af': t>0?'ap': ''; }
 function cBg(c)   { return c==='Sweden'?'#dbeafe':'#fef3c7'; }
@@ -387,6 +388,7 @@ function isoWeekNumber(date){
 }
 
 function openDatePicker(targetField, currentValue){
+  clearTimeout(_debounceTimer); // cancel any pending render() from blur events
   const d = currentValue ? new Date(currentValue) : new Date();
   state.datePickerOpenFor = targetField;
   state.datePickerMonth = {year: d.getFullYear(), month: d.getMonth()};
@@ -493,7 +495,7 @@ function peopleSelect(id, value, onchangeCode, extraStyle, placeholder){
 }
 function peopleSelectOptional(id, value, onchangeCode, extraStyle){
   setTimeout(() => { const el=document.getElementById(id); if(el && document.activeElement!==el) el.value=value||''; }, 0);
-  return `<input class="sel" id="${id}" list="people-list-optional" placeholder="Type name or leave blank…" style="${extraStyle||''}" autocomplete="off" oninput="${onchangeCode}" onblur="if(!state.datePickerOpenFor)debounce(render,200)" />`;
+  return `<input class="sel" id="${id}" list="people-list-optional" placeholder="Type name or leave blank…" style="${extraStyle||''}" autocomplete="off" oninput="${onchangeCode}" onblur="setTimeout(()=>{if(!state.datePickerOpenFor)render()},300)" />`;
 }
 function buildDatalist(){
   const people = getAllPeople();
